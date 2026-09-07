@@ -25,6 +25,7 @@
   "bin": { "jitscribe": "dist/cli.js" },
   "scripts": {
     "build": "tsc",
+    "bootstrap": "bash scripts/bootstrap.sh",
     "prepack": "npm run build",
     "setup:whisper": "bash scripts/setup-whisper.sh",
     "test": "tsx --test src/*.test.ts",

@@ -47,9 +47,30 @@ Install Chrome or Chromium separately if neither is already available.
 
 ## Install from source
 
+On Ubuntu or Debian, the bootstrap script can install the system packages,
+build the local Whisper worker, and expose `jitscribe` on your `PATH`:
+
 ```bash
 git clone <repository-url> jitscribe
 cd jitscribe
+bash scripts/bootstrap.sh
+```
+
+The script is safe to rerun. It requires Node.js 22+ and Chromium or Google
+Chrome; install those first if they are not already available. It does not
+replace an existing browser or Node installation. Use `--skip-system` when the
+system packages are already installed, `--skip-whisper` to defer the large
+Whisper download, or `--no-link` to avoid `npm link`.
+
+For a preview without making changes:
+
+```bash
+bash scripts/bootstrap.sh --dry-run
+```
+
+The equivalent manual steps are:
+
+```bash
 npm ci
 npm run setup:whisper
 npm run build
