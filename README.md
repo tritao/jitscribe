@@ -277,7 +277,9 @@ consume the same normalized PCM and return timestamped segments. It builds as
 part of `npm run test:native`, but is not wired into the CLI yet. This lets us
 benchmark it against the current persistent `whisper-server` worker without
 changing the production path. The crate currently expects a GGML model and
-does not load or download models itself.
+does not load or download models itself. Its segments now include Whisper token
+timestamps grouped into word records (`from_ms`, `to_ms`, `text`, and
+`probability`), matching the data needed by Jitscribe's speaker binder.
 
 Run the headless native benchmark against a 16 kHz mono PCM16 WAV:
 
@@ -287,9 +289,9 @@ npm run bench:whisper-native -- \
   path/to/chunk-000000.wav en > native-result.json
 ```
 
-The command emits JSON containing elapsed time, full text, and timestamped
-segments, making it suitable for comparing the native result with the existing
-Whisper worker on the same fixture.
+The command emits JSON containing elapsed time, full text, timestamped segments,
+and word records, making it suitable for comparing the native result with the
+existing Whisper worker on the same fixture.
 
 ## License and attribution
 

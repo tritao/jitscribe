@@ -6,16 +6,25 @@
 //! process-backed `whisper-server` implementation before changing the CLI.
 
 use serde::Serialize;
-use whisper_cpp_plus::{TranscriptionParams, WhisperContext, WhisperError};
+use whisper_cpp_plus::{FullParams, SamplingStrategy, WhisperContext, WhisperError};
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct Word {
+    pub from_ms: i64,
+    pub to_ms: i64,
+    pub text: String,
+    pub probability: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Segment {
     pub start_ms: i64,
     pub end_ms: i64,
     pub text: String,
+    pub words: Vec<Word>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Transcription {
     pub text: String,
     pub segments: Vec<Segment>,
@@ -41,29 +50,84 @@ impl WhisperTranscriber {
 
     /// Transcribe normalized mono PCM samples at 16 kHz.
     pub fn transcribe(&self, samples: &[f32]) -> Result<Transcription, WhisperError> {
-        let mut builder = TranscriptionParams::builder().enable_timestamps();
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 })
+            .no_timestamps(false)
+            .token_timestamps(true)
+            .split_on_word(true);
         if let Some(language) = self.language.as_deref() {
-            builder = builder.language(language);
+            params = params.language(language);
         }
-        let result = self
-            .context
-            .transcribe_with_params(samples, builder.build())?;
+        let mut state = self.context.create_state()?;
+        state.full(params, samples)?;
+        let n_segments = state.full_n_segments();
+        let mut segments = Vec::with_capacity(n_segments as usize);
+        let mut full_text = String::new();
+        for segment_index in 0..n_segments {
+            let text = state.full_get_segment_text(segment_index)?;
+            let (start_ticks, end_ticks) = state.full_get_segment_timestamps(segment_index);
+            let words = extract_words(&state, segment_index)?;
+            if segment_index > 0 {
+                full_text.push(' ');
+            }
+            full_text.push_str(&text);
+            segments.push(Segment {
+                start_ms: whisper_timestamp_to_ms(start_ticks),
+                end_ms: whisper_timestamp_to_ms(end_ticks),
+                text,
+                words,
+            });
+        }
         Ok(Transcription {
-            text: result.text,
-            segments: result
-                .segments
-                .into_iter()
-                .map(|segment| Segment {
-                    // whisper.cpp timestamps are in 10 ms ticks. The
-                    // upstream crate names these fields `*_ms` but returns
-                    // the raw tick values.
-                    start_ms: whisper_timestamp_to_ms(segment.start_ms),
-                    end_ms: whisper_timestamp_to_ms(segment.end_ms),
-                    text: segment.text,
-                })
-                .collect(),
+            text: full_text,
+            segments,
         })
     }
+}
+
+fn extract_words(
+    state: &whisper_cpp_plus::WhisperState,
+    segment_index: i32,
+) -> Result<Vec<Word>, WhisperError> {
+    let mut words = Vec::new();
+    let mut current: Option<Word> = None;
+    for token_index in 0..state.full_n_tokens(segment_index) {
+        let token_text = state.full_get_token_text(segment_index, token_index)?;
+        let Some(data) = state.full_get_token_data(segment_index, token_index) else {
+            continue;
+        };
+        if token_text.starts_with("[_") && token_text.ends_with("]") {
+            continue;
+        }
+        let from_ms = whisper_timestamp_to_ms(data.t0);
+        let to_ms = whisper_timestamp_to_ms(data.t1.max(data.t0));
+        let has_boundary = token_text.chars().next().is_some_and(char::is_whitespace);
+        for (piece_index, text) in token_text.split_whitespace().enumerate() {
+            if has_boundary || piece_index > 0 {
+                if let Some(word) = current.take() {
+                    words.push(word);
+                }
+            }
+            match current.as_mut() {
+                Some(word) => {
+                    word.text.push_str(text);
+                    word.to_ms = to_ms;
+                    word.probability = data.p;
+                }
+                None => {
+                    current = Some(Word {
+                        from_ms,
+                        to_ms,
+                        text: text.to_owned(),
+                        probability: data.p,
+                    });
+                }
+            }
+        }
+    }
+    if let Some(word) = current {
+        words.push(word);
+    }
+    Ok(words)
 }
 
 /// Convert signed 16-bit PCM to the f32 representation expected by Whisper.
