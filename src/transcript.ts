@@ -1,5 +1,7 @@
-import { appendFile, readFile, unlink } from "node:fs/promises";
-import { spawn } from "node:child_process";
+import { appendFile, readFile } from "node:fs/promises";
+import { basename } from "node:path";
+import { createServer } from "node:net";
+import { spawn, type ChildProcess } from "node:child_process";
 
 export interface WhisperSegment { fromMs: number; toMs: number; text: string; }
 export interface Segment {
@@ -19,24 +21,89 @@ export function isMeaningfulTranscript(text: string): boolean {
     .some(line => line.trim() !== "" && !/^\s*\[\s*(?:blank_audio|silence)\s*\]\s*$/i.test(line));
 }
 
-export async function transcribeChunk(command: string, model: string, language: string, wav: string): Promise<WhisperSegment[]> {
-  const args = ["-m", model, "-f", wav, "-oj", "-of", `${wav}.transcript`];
-  if (language !== "auto") args.push("-l", language);
-  await new Promise<void>((resolve, reject) => {
-    const child = spawn(command, args, { stdio: ["ignore", "inherit", "inherit"] });
-    child.once("error", reject);
-    child.once("exit", code => code === 0 ? resolve() : reject(new Error(`whisper exited with code ${code}`)));
-  });
-  const path = `${wav}.transcript.json`;
-  const document = JSON.parse(await readFile(path, "utf8")) as {
-    transcription?: Array<{ offsets?: { from?: number; to?: number }; text?: string }>;
-  };
-  await unlink(path).catch(() => {});
-  return (document.transcription ?? []).flatMap(segment => {
-    const text = (segment.text ?? "").trim();
+interface WhisperServerResponse {
+  segments?: Array<{ start?: number; end?: number; text?: string }>;
+}
+
+export function parseWhisperResponse(document: WhisperServerResponse): WhisperSegment[] {
+  return (document.segments ?? []).flatMap(segment => {
+    const text = String(segment.text ?? "").trim();
     if (!isMeaningfulTranscript(text)) return [];
-    return [{ fromMs: segment.offsets?.from ?? 0, toMs: segment.offsets?.to ?? 0, text }];
+    return [{ fromMs: Math.round((segment.start ?? 0) * 1000), toMs: Math.round((segment.end ?? 0) * 1000), text }];
   });
+}
+
+async function availablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      const port = typeof address === "object" && address ? address.port : 0;
+      server.close(error => error ? reject(error) : resolve(port));
+    });
+  });
+}
+
+export class WhisperWorker {
+  private child?: ChildProcess;
+  private baseUrl?: string;
+  private stderr = "";
+  private processError?: Error;
+
+  constructor(private command: string, private model: string) {}
+
+  async start(timeoutMs = 30_000): Promise<void> {
+    if (this.child) return;
+    const port = await availablePort();
+    this.baseUrl = `http://127.0.0.1:${port}`;
+    const child = spawn(this.command, ["-m", this.model, "--host", "127.0.0.1", "--port", String(port), "-nlp"], {
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    this.child = child;
+    child.once("error", error => { this.processError = error; });
+    child.stderr?.on("data", data => { this.stderr = (this.stderr + String(data)).slice(-4000); });
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      if (this.processError) throw new Error(`cannot start whisper worker: ${this.processError.message}`);
+      if (child.exitCode !== null) throw new Error(`whisper worker exited during startup: ${this.stderr.trim()}`);
+      try {
+        const response = await fetch(`${this.baseUrl}/health`);
+        if (response.ok) return;
+      } catch { /* still loading */ }
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    await this.stop();
+    throw new Error(`whisper worker did not become healthy within ${timeoutMs} ms`);
+  }
+
+  async transcribe(wav: string, language: string): Promise<WhisperSegment[]> {
+    if (!this.child || !this.baseUrl || this.child.exitCode !== null) {
+      throw new Error(`whisper worker is not running${this.stderr ? `: ${this.stderr.trim()}` : ""}`);
+    }
+    const form = new FormData();
+    const bytes = await readFile(wav);
+    form.append("file", new Blob([bytes]), basename(wav));
+    form.append("response_format", "verbose_json");
+    form.append("language", language);
+    form.append("temperature", "0.0");
+    const response = await fetch(`${this.baseUrl}/inference`, { method: "POST", body: form });
+    const body = await response.text();
+    if (!response.ok) throw new Error(`whisper inference failed (${response.status}): ${body.slice(0, 500)}`);
+    return parseWhisperResponse(JSON.parse(body) as WhisperServerResponse);
+  }
+
+  async stop(): Promise<void> {
+    const child = this.child;
+    this.child = undefined;
+    this.baseUrl = undefined;
+    if (!child || child.exitCode !== null) return;
+    child.kill("SIGTERM");
+    await new Promise<void>(resolve => {
+      const timer = setTimeout(() => { child.kill("SIGKILL"); resolve(); }, 3000);
+      child.once("exit", () => { clearTimeout(timer); resolve(); });
+    });
+  }
 }
 
 export async function appendSegment(path: string, segment: Segment): Promise<void> {

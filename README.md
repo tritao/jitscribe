@@ -104,7 +104,7 @@ Use `Ctrl+C` to leave the room and stop transcription.
 --headed                   Display Chromium for diagnosis
 --keep-audio               Retain temporary WAV chunks
 --browser PATH             Override Chrome/Chromium executable
---whisper PATH             Override whisper-cli
+--whisper PATH             Override whisper-server
 --model PATH               Override the GGML model
 ```
 
@@ -137,7 +137,7 @@ Dedicated PulseAudio null sink
     ↓
 FFmpeg 16 kHz mono chunks
     ↓
-Local whisper.cpp transcription
+Persistent local whisper.cpp worker
     ↓
 JSONL transcript
 ```
@@ -165,7 +165,8 @@ command line.
 - Speaker attribution is best-effort: it aligns mixed-audio Whisper segments with
   Jitsi's dominant-speaker signal and can be ambiguous during overlap or rapid turns
 - Headless mode is implemented but has not completed a live validation run
-- Whisper is reloaded for every audio chunk, increasing CPU use and latency
+- The persistent Whisper worker handles one audio chunk at a time, so output arrives
+  after each configured chunk interval rather than word-by-word
 - Jitsi interface changes may require selector updates
 - Authenticated Jitsi deployments are not yet supported
 

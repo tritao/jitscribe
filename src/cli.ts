@@ -4,7 +4,7 @@ import { dirname, basename } from "node:path";
 import { chromium } from "playwright-core";
 import { parseArgs } from "./options.js";
 import { join, isJoined } from "./jitsi.js";
-import { appendSegment, transcribeChunk } from "./transcript.js";
+import { appendSegment, WhisperWorker } from "./transcript.js";
 import { checkedSpawn, createPulseSink, findExecutable, waitForStableFiles } from "./processes.js";
 import { attributeSpeaker, SpeakerTracker } from "./speakers.js";
 
@@ -15,7 +15,7 @@ const HELP = `Usage: jitscribe join <room-or-url> [options]
   --password PASSWORD        Room password
   --output FILE.jsonl        Transcript output
   --audio FILE.wav           Audio output base name
-  --whisper PATH             Override the bundled whisper.cpp CLI
+  --whisper PATH             Override the bundled whisper.cpp server
   --model PATH               Override the bundled multilingual small model
   --language CODE            auto, en, pt, ...
   --chunk-seconds N          Streaming chunk size (default: 15)
@@ -34,7 +34,7 @@ async function main(): Promise<void> {
   }
   await stat(opts.model).catch(() => { throw new Error(`Whisper model not found: ${opts.model}`); });
   const browserPath = findExecutable(opts.browser, ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]);
-  const whisper = findExecutable(opts.whisper, ["whisper-cli", "whisper-cpp", "main"]);
+  const whisper = findExecutable(opts.whisper, ["whisper-server"]);
   const ffmpeg = findExecutable(undefined, ["ffmpeg"]);
   await mkdir(dirname(opts.output), { recursive: true });
   const chunkDir = `${dirname(opts.audio)}/.${basename(opts.audio)}.chunks-${process.pid}`;
@@ -50,13 +50,14 @@ async function main(): Promise<void> {
   const page = await context.newPage();
   const speakers = new SpeakerTracker(page, opts.name);
   speakers.start();
+  const worker = new WhisperWorker(whisper, opts.model);
   let stopping = false;
   process.once("SIGINT", () => { stopping = true; });
   const seen = new Set<string>();
   const transcribeReady = async (includeLast = false) => {
     for (const wav of await waitForStableFiles(chunkDir, "chunk-", seen, includeLast)) {
       seen.add(wav);
-      const whisperSegments = await transcribeChunk(whisper, opts.model, opts.language, wav);
+      const whisperSegments = await worker.transcribe(wav, opts.language);
       const chunkNumber = Number(/chunk-(\d+)\.wav$/.exec(wav)?.[1] ?? 0);
       const chunkStart = captureStartedAt + chunkNumber * opts.chunkSeconds * 1000;
       for (const item of whisperSegments) {
@@ -80,6 +81,7 @@ async function main(): Promise<void> {
   };
 
   try {
+    await worker.start();
     for (let attempt = 0; !stopping; attempt++) {
       try {
         console.error(`Joining ${opts.meetingUrl}${attempt ? ` (retry ${attempt}/${opts.maxRetries})` : ""}...`);
@@ -103,6 +105,7 @@ async function main(): Promise<void> {
     recorder.kill("SIGINT");
     await new Promise(r => setTimeout(r, 500));
     await transcribeReady(true).catch(error => console.error(`final transcription failed: ${error.message}`));
+    await worker.stop();
     try { await browser.close(); }
     finally {
       ownedPulse?.close();

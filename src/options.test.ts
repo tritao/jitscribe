@@ -14,6 +14,6 @@ test("parses retry and identity options", () => {
 });
 test("uses the project-local whisper build and model by default", () => {
   const o = parseArgs(["Room"]);
-  assert.match(o.whisper, /\.deps\/whisper\.cpp\/build\/bin\/whisper-cli$/);
+  assert.match(o.whisper, /\.deps\/whisper\.cpp\/build\/bin\/whisper-server$/);
   assert.match(o.model, /\.deps\/whisper\.cpp\/models\/ggml-small\.bin$/);
 });

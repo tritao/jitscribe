@@ -31,4 +31,5 @@ printf '%s  %s\n' "$model_sha256" "$model" | sha256sum --check --status || {
 }
 
 "$source_dir/build/bin/whisper-cli" --help >/dev/null 2>&1
-printf 'whisper-cli: %s\nmodel: %s\n' "$source_dir/build/bin/whisper-cli" "$model"
+"$source_dir/build/bin/whisper-server" --help >/dev/null 2>&1
+printf 'whisper-server: %s\nmodel: %s\n' "$source_dir/build/bin/whisper-server" "$model"

@@ -2,7 +2,7 @@ import { basename, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const PROJECT_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const LOCAL_WHISPER = resolve(PROJECT_ROOT, ".deps/whisper.cpp/build/bin/whisper-cli");
+const LOCAL_WHISPER = resolve(PROJECT_ROOT, ".deps/whisper.cpp/build/bin/whisper-server");
 const LOCAL_MODEL = resolve(PROJECT_ROOT, ".deps/whisper.cpp/models/ggml-small.bin");
 
 export interface Options {
