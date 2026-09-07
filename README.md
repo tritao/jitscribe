@@ -139,7 +139,9 @@ the next window, then absolute timestamp watermarks prevent duplicate output.
 Speaker confidence combines the freshness of the dominant-speaker sample with the
 amount of supporting evidence. A turn can still include a likely speaker while
 being marked `ambiguous` when two participants are equally close in the Jitsi
-activity signal.
+activity signal. Internally, the tracker also emits Vexa-style speaker start,
+end, and two-second heartbeat events; explicit end events prevent stale names from
+bleeding into later speech.
 
 ## How it works
 

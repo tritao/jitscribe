@@ -67,6 +67,9 @@ test("mocked headless join flows from captured chunk to attributed JSONL", async
         { atMs: 1_250, id: "alice-id", name: "Alice", source: "redux" },
         { atMs: 1_750, id: "alice-id", name: "Alice", source: "redux" },
       ],
+      getSpeakerEvents: () => [
+        { atMs: 1_000, id: "alice-id", name: "Alice", source: "redux", phase: "start" },
+      ],
     }).process(true);
 
     assert.match(transcribedPath, /chunk-000000\.wav$/);

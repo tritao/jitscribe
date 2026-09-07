@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 import { appendSegment, shouldEmitSegment, type Segment, type WhisperSegment } from "./transcript.js";
 import { buildOverlapWindow, waitForStableFiles } from "./processes.js";
-import { attributeSpeaker, buildSpeakerTurns, type SpeakerObservation, type SpeakerTurn } from "./speakers.js";
+import { attributeSpeaker, buildSpeakerTurns, type SpeakerObservation, type SpeakerSignal, type SpeakerTurn } from "./speakers.js";
 
 export interface WhisperTranscriber {
   transcribe(wav: string, language: string): Promise<WhisperSegment[]>;
@@ -18,6 +18,7 @@ export interface TranscriptPipelineOptions {
   keepAudio: boolean;
   worker: WhisperTranscriber;
   getSpeakerObservations: () => readonly SpeakerObservation[];
+  getSpeakerEvents?: () => readonly SpeakerSignal[];
   onSegment?: (segment: Segment) => void;
 }
 
@@ -54,13 +55,14 @@ export class TranscriptPipeline {
       if (input === windowPath && !options.keepAudio) await rm(windowPath, { force: true });
 
       for (const item of whisperSegments) {
+        const speakerEvents = options.getSpeakerEvents?.() ?? [];
         const turns: SpeakerTurn[] = item.words.length
-          ? buildSpeakerTurns(item.words, options.getSpeakerObservations(), 900, windowStart)
+          ? buildSpeakerTurns(item.words, options.getSpeakerObservations(), 900, windowStart, speakerEvents)
           : [{
             fromMs: item.fromMs,
             toMs: item.toMs,
             text: item.text,
-            ...attributeSpeaker(options.getSpeakerObservations(), windowStart + item.fromMs, windowStart + item.toMs),
+            ...attributeSpeaker(options.getSpeakerObservations(), windowStart + item.fromMs, windowStart + item.toMs, speakerEvents),
           }];
         for (const turn of turns) {
           const startMs = windowStart + turn.fromMs;

@@ -8,6 +8,19 @@ export interface SpeakerObservation {
   source: "redux" | "dom";
 }
 
+export interface SpeakerSignal {
+  atMs: number;
+  id: string;
+  name: string;
+  source: "redux" | "dom";
+  phase: "start" | "heartbeat" | "end";
+}
+
+export interface SpeakerSignalState {
+  current: Omit<SpeakerObservation, "atMs"> | null;
+  lastAssertMs: number;
+}
+
 export interface SpeakerAttribution {
   speaker: string | null;
   speakerId: string | null;
@@ -28,6 +41,38 @@ export interface SpeakerTurn {
 }
 
 const round = (value: number): number => Number(value.toFixed(3));
+
+export function createSpeakerSignalState(): SpeakerSignalState {
+  return { current: null, lastAssertMs: 0 };
+}
+
+/** Produce Vexa-compatible start/end/heartbeat events from dominant-speaker samples. */
+export function updateSpeakerSignal(
+  state: SpeakerSignalState,
+  dominant: Omit<SpeakerObservation, "atMs"> | null,
+  atMs: number,
+  heartbeatMs = 2_000,
+): SpeakerSignal[] {
+  const events: SpeakerSignal[] = [];
+  const currentId = state.current?.id ?? null;
+  const nextId = dominant?.id ?? null;
+  if (currentId !== nextId) {
+    if (state.current) events.push({ ...state.current, atMs, phase: "end" });
+    if (dominant) {
+      events.push({ ...dominant, atMs, phase: "start" });
+      state.lastAssertMs = atMs;
+    } else {
+      state.lastAssertMs = 0;
+    }
+    state.current = dominant;
+    return events;
+  }
+  if (state.current && atMs - state.lastAssertMs >= heartbeatMs) {
+    state.lastAssertMs = atMs;
+    events.push({ ...state.current, atMs, phase: "heartbeat" });
+  }
+  return events;
+}
 
 export async function readDominantSpeaker(page: Page, selfName: string): Promise<Omit<SpeakerObservation, "atMs"> | null> {
   const dominant = await page.evaluate(() => {
@@ -58,8 +103,30 @@ export async function readDominantSpeaker(page: Page, selfName: string): Promise
   return dominant;
 }
 
-export function attributeSpeaker(observations: readonly SpeakerObservation[], fromMs: number, toMs: number): SpeakerAttribution {
-  const relevant = observations.filter(sample => sample.atMs >= fromMs && sample.atMs <= toMs);
+function activeSpeakerAt(events: readonly SpeakerSignal[], atMs: number): SpeakerSignal | null {
+  let active: SpeakerSignal | null = null;
+  for (const event of events) {
+    if (event.atMs > atMs) break;
+    if (event.phase === "end") {
+      if (active?.id === event.id) active = null;
+    } else {
+      active = event;
+    }
+  }
+  return active;
+}
+
+export function attributeSpeaker(
+  observations: readonly SpeakerObservation[],
+  fromMs: number,
+  toMs: number,
+  events: readonly SpeakerSignal[] = [],
+): SpeakerAttribution {
+  const relevant = observations.filter(sample => {
+    if (sample.atMs < fromMs || sample.atMs > toMs) return false;
+    if (!events.length) return true;
+    return activeSpeakerAt(events, sample.atMs)?.id === sample.id;
+  });
   if (!relevant.length) return { speaker: null, speakerId: null, confidence: 0, samples: 0, status: "unknown" };
   const counts = new Map<string, { name: string; id: string; count: number }>();
   for (const sample of relevant) {
@@ -90,13 +157,22 @@ interface SpeakerMatch {
   ambiguous: boolean;
 }
 
-function speakerAt(observations: readonly SpeakerObservation[], atMs: number, maxAgeMs: number): SpeakerMatch | null {
+function speakerAt(
+  observations: readonly SpeakerObservation[],
+  atMs: number,
+  maxAgeMs: number,
+  events: readonly SpeakerSignal[] = [],
+): SpeakerMatch | null {
+  const active = events.length ? activeSpeakerAt(events, atMs) : undefined;
+  if (events.length && !active) return null;
+  const candidates = active ? observations.filter(sample => sample.id === active.id) : observations;
   const ranked = observations
+    .filter(sample => candidates.includes(sample))
     .map(sample => ({ sample, distance: Math.abs(sample.atMs - atMs) }))
     .sort((a, b) => a.distance - b.distance);
   const best = ranked[0];
   if (!best || best.distance > maxAgeMs) return null;
-  const competitor = ranked.find(candidate => candidate.sample.id !== best.sample.id);
+  const competitor = active ? undefined : ranked.find(candidate => candidate.sample.id !== best.sample.id);
   const ambiguityWindow = Math.min(150, maxAgeMs * 0.25);
   const ambiguous = Boolean(competitor && competitor.distance - best.distance <= ambiguityWindow);
   return {
@@ -107,9 +183,15 @@ function speakerAt(observations: readonly SpeakerObservation[], atMs: number, ma
 }
 
 /** Match Whisper words to the nearest fresh Jitsi dominant-speaker observation and group turns. */
-export function buildSpeakerTurns(words: TimedWord[], observations: readonly SpeakerObservation[], gapMs = 900, timeOffsetMs = 0): SpeakerTurn[] {
+export function buildSpeakerTurns(
+  words: TimedWord[],
+  observations: readonly SpeakerObservation[],
+  gapMs = 900,
+  timeOffsetMs = 0,
+  events: readonly SpeakerSignal[] = [],
+): SpeakerTurn[] {
   const attributed = words.map(word => {
-    const match = speakerAt(observations, timeOffsetMs + (word.fromMs + word.toMs) / 2, gapMs);
+    const match = speakerAt(observations, timeOffsetMs + (word.fromMs + word.toMs) / 2, gapMs, events);
     return { word, match };
   });
   const turns: SpeakerTurn[] = [];
@@ -139,19 +221,25 @@ export function buildSpeakerTurns(words: TimedWord[], observations: readonly Spe
 
 export class SpeakerTracker {
   readonly observations: SpeakerObservation[] = [];
+  readonly events: SpeakerSignal[] = [];
   private timer?: NodeJS.Timeout;
   private sampling = false;
+  private readonly signalState = createSpeakerSignalState();
+  private heartbeatMs = 2_000;
 
   constructor(private page: Page, private selfName: string) {}
 
-  start(intervalMs = 400): void {
+  start(intervalMs = 400, heartbeatMs = 2_000): void {
     if (this.timer) return;
+    this.heartbeatMs = heartbeatMs;
     const sample = async () => {
       if (this.sampling) return;
       this.sampling = true;
       try {
+        const atMs = Date.now();
         const dominant = await readDominantSpeaker(this.page, this.selfName);
-        if (dominant) this.observations.push({ ...dominant, atMs: Date.now() });
+        this.events.push(...updateSpeakerSignal(this.signalState, dominant, atMs, this.heartbeatMs));
+        if (dominant) this.observations.push({ ...dominant, atMs });
       } finally { this.sampling = false; }
     };
     void sample();
@@ -161,5 +249,6 @@ export class SpeakerTracker {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    this.events.push(...updateSpeakerSignal(this.signalState, null, Date.now(), this.heartbeatMs));
   }
 }

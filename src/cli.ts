@@ -82,6 +82,7 @@ async function main(): Promise<void> {
       keepAudio: opts.keepAudio,
       worker: whisperWorker,
       getSpeakerObservations: () => speakers?.observations ?? [],
+      getSpeakerEvents: () => speakers?.events ?? [],
       onSegment: segment => console.log(`[${segment.start}] ${segment.speaker ?? "Unknown"}: ${segment.text}`),
     });
     transcribeReady = async (includeLast = false) => { await pipeline.process(includeLast); };
