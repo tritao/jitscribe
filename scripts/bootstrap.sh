@@ -2,9 +2,9 @@
 set -euo pipefail
 
 # Bootstrap a source checkout on Ubuntu/Debian and make the jitscribe command
-# available on PATH. The script is deliberately idempotent: rerunning it keeps
-# existing npm dependencies, whisper builds, and downloaded models when they
-# are already present.
+# available on PATH. The script is deliberately repeatable: rerunning it
+# refreshes JavaScript dependencies from the lockfile while reusing an existing
+# whisper build and downloaded models.
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 skip_system=0

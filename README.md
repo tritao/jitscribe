@@ -1,74 +1,89 @@
 # Jitscribe
 
-Jitscribe sends a visible bot into a Jitsi meeting and writes a live, local
-transcript. Meeting audio stays on your computer and is transcribed offline with
-[whisper.cpp](https://github.com/ggml-org/whisper.cpp).
+[![CI](https://github.com/tritao/jitscribe/actions/workflows/ci.yml/badge.svg)](https://github.com/tritao/jitscribe/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue.svg)](LICENSE)
+
+Jitscribe is a local-first Jitsi meeting bot. Start it with a meeting URL and it
+joins as a visible participant, captures the room audio, and writes a live JSONL
+transcript using a local Whisper worker.
 
 ```bash
 jitscribe join https://meet.jit.si/YourRoom
 ```
 
-Jitscribe is early alpha software. It has completed a real `meet.jit.si` join and
-local transcription test, but needs broader testing across long meetings and
-self-hosted Jitsi deployments.
+Audio and transcripts stay on the machine running Jitscribe. The only network
+connections are to the Jitsi deployment you provide and the one-time model
+downloads during setup.
 
-## What it does
+> **Alpha software:** the end-to-end path works against controlled
+> `meet.jit.si` rooms, but long-running meetings, self-hosted deployments, and
+> difficult overlapping speech still need broader validation.
 
-- Joins a Jitsi room as a named, receive-only participant
-- Waits in the lobby for admission and supports room passwords
-- Retries transient join and connection failures with exponential backoff
-- Isolates Chromium audio from other desktop audio
-- Transcribes locally with the multilingual Whisper `small` model
-- Appends completed segments to a crash-resistant JSONL file
-- Adds best-effort speaker names from Jitsi's dominant-speaker state
-- Uses Whisper word timestamps to split a transcript when speakers change
-- Resolves speaker hints through a lag-corrected, overlap-based local binder
-- Reports attribution confidence and marks competing speaker evidence as `ambiguous`
-- Runs with headless Chromium by default
+## Highlights
+
+- **One command to run:** join by complete URL or by room name.
+- **Local transcription:** pinned [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+  with the multilingual `small` model and Silero VAD.
+- **Receive-only bot:** the browser joins muted and does not publish a camera or
+  microphone stream.
+- **Resilient joining:** lobby admission, room passwords, disconnect detection,
+  and exponential reconnect retries.
+- **Clean audio path:** Chromium is routed through a dedicated PulseAudio sink;
+  FFmpeg captures 16 kHz mono chunks.
+- **Speaker hints:** Jitsi dominant-speaker events are aligned with Whisper word
+  timestamps through a lag-aware binder, with confidence and ambiguity status.
+- **Stable records:** session-scoped segment IDs, overlap watermarks, and
+  append-only JSONL output make downstream ingestion straightforward.
+- **Headless by default:** use `--headed` when diagnosing a room or browser
+  compatibility issue.
 
 ## Requirements
 
-Jitscribe currently targets Linux and requires:
+Jitscribe currently supports Linux only:
 
 - Node.js 22 or newer
 - Chromium or Google Chrome
 - CMake and a C/C++ compiler
 - FFmpeg with PulseAudio input support
 - PulseAudio, or PipeWire's PulseAudio compatibility layer
-- `pactl`, Git and curl
+- `pactl`, Git, curl, and a working user audio session
 
-On Ubuntu 24.04, most system dependencies can be installed with:
+On Ubuntu 24.04, the system packages are:
 
 ```bash
-sudo apt install build-essential cmake curl ffmpeg git libpulse0 pulseaudio-utils
+sudo apt install build-essential ca-certificates cmake curl ffmpeg git \
+  libpulse0 pulseaudio-utils
 ```
 
-Install Chrome or Chromium separately if neither is already available.
+Install Node.js 22+ and Chromium/Chrome separately if they are not already
+available. The bootstrap script checks for both and never replaces an existing
+installation.
 
-## Install from source
+## Quick start
 
-On Ubuntu or Debian, the bootstrap script can install the system packages,
-build the local Whisper worker, and expose `jitscribe` on your `PATH`:
+Clone the repository, then let the bootstrap script install dependencies, build
+Whisper, download and verify the models, compile Jitscribe, and create the
+`jitscribe` command:
 
 ```bash
-git clone <repository-url> jitscribe
+git clone https://github.com/tritao/jitscribe.git
 cd jitscribe
 bash scripts/bootstrap.sh
 ```
 
-The script is safe to rerun. It requires Node.js 22+ and Chromium or Google
-Chrome; install those first if they are not already available. It does not
-replace an existing browser or Node installation. Use `--skip-system` when the
-system packages are already installed, `--skip-whisper` to defer the large
-Whisper download, or `--no-link` to avoid `npm link`.
-
-For a preview without making changes:
+The initial Whisper setup downloads approximately 465 MB for the main model and
+the VAD model. Both files are verified with SHA-256. The bootstrap script is safe
+to rerun; it refreshes JavaScript dependencies from the lockfile and reuses an
+existing Whisper build/model:
 
 ```bash
-bash scripts/bootstrap.sh --dry-run
+bash scripts/bootstrap.sh --dry-run       # show commands only
+bash scripts/bootstrap.sh --skip-system   # dependencies are already installed
+bash scripts/bootstrap.sh --skip-whisper  # defer the model build/download
+bash scripts/bootstrap.sh --no-link       # do not create a global npm link
 ```
 
-The equivalent manual steps are:
+The equivalent manual setup is:
 
 ```bash
 npm ci
@@ -77,9 +92,9 @@ npm run build
 npm link
 ```
 
-`setup:whisper` builds a pinned whisper.cpp revision and downloads the multilingual
-`small` model plus the Silero VAD model. The main download is approximately 465 MB;
-both files are verified with SHA-256.
+The first setup builds a pinned whisper.cpp revision and downloads the
+multilingual `small` model plus Silero VAD. The main download is approximately
+465 MB; both files are verified with SHA-256.
 
 Verify the installation:
 
@@ -89,13 +104,13 @@ jitscribe --help
 
 ## Join a meeting
 
-Pass a complete Jitsi URL:
+Pass a complete URL:
 
 ```bash
 jitscribe join https://meet.jit.si/YourRoom
 ```
 
-Or pass a room name, which defaults to `meet.jit.si`:
+Or pass a room name, which defaults to `https://meet.jit.si`:
 
 ```bash
 jitscribe join YourRoom
@@ -107,70 +122,68 @@ For a self-hosted deployment:
 jitscribe join YourRoom --host https://jitsi.example.org
 ```
 
-Jitscribe appears in the participant list as `Transcription Bot`. A moderator may
-need to admit it. To use a different visible name:
+The bot appears as `Transcription Bot` and may need to be admitted by a
+moderator. Set a different visible name with `--name`:
 
 ```bash
 jitscribe join YourRoom --name "Meeting Notes"
 ```
 
-Use `Ctrl+C` to leave the room and stop transcription.
+Use `Ctrl-C` to leave the room and flush the final transcript window.
 
-## Common options
-
-```text
---name NAME                Visible participant name
---password PASSWORD        Password for a protected room
---language CODE            Whisper language: auto, en, pt, ...
---output FILE.jsonl        Transcript destination
---chunk-seconds N          Transcription interval; default 15
---overlap-seconds N        Boundary overlap; default 2
---max-retries N            Maximum rejoin attempts; default 10
---admission-timeout N      Lobby timeout in seconds; default 300
---headed                   Display Chromium for diagnosis
---keep-audio               Retain temporary WAV chunks
---verbose                  Show diagnostic subprocess logs
---log-format text|json     Lifecycle log format
---browser PATH             Override Chrome/Chromium executable
---whisper PATH             Override whisper-server
---model PATH               Override the GGML model
---vad-model PATH           Override the Silero VAD model
-```
-
-Use a visible browser when diagnosing admission or Jitsi compatibility:
+For browser or admission diagnostics, show Chromium:
 
 ```bash
-jitscribe join YourRoom --headed
+jitscribe join YourRoom --headed --verbose
 ```
 
-## Output
+## Command-line options
 
-By default, a room called `YourRoom` produces `YourRoom.jsonl`. Each line is an
-independently durable JSON object:
+```text
+--host URL                 Host for a bare room id (default: meet.jit.si)
+--name NAME                Visible participant name
+--password PASSWORD        Password for a protected room
+--output FILE.jsonl        Transcript destination
+--audio FILE.wav           Audio output base name
+--language CODE            auto, en, pt, ...
+--chunk-seconds N          Transcription interval (default: 15)
+--overlap-seconds N        Boundary overlap (default: 2)
+--max-retries N            Rejoin attempts (default: 10)
+--admission-timeout N      Lobby timeout in seconds (default: 300)
+--browser PATH             Chromium/Chrome executable override
+--whisper PATH             whisper-server executable override
+--model PATH               GGML model override
+--vad-model PATH           Silero VAD model override
+--keep-audio               Retain temporary WAV chunks
+--verbose                  Show browser/audio/Whisper diagnostics
+--log-format text|json     Lifecycle log format (default: text)
+--headed                   Show the browser window
+```
+
+By default, `YourRoom` produces `YourRoom.jsonl`. Temporary WAV chunks are
+deleted after a clean shutdown; use `--keep-audio` while debugging capture.
+
+## Transcript format
+
+Each line is an independently durable JSON object:
 
 ```json
 {"sessionId":"6c9e7a9f-8f3d-4c0c-a3a4-8e5c9e98fabc","segmentId":"6c9e7a9f-8f3d-4c0c-a3a4-8e5c9e98fabc:chunk-000000:turn-0000-0000","revision":0,"timestamp":"2026-09-02T11:39:36.105Z","start":"2026-09-02T11:39:34.105Z","end":"2026-09-02T11:39:36.000Z","speaker":"Alice","speakerId":"participant-id","speakerConfidence":0.8,"speakerStatus":"attributed","text":"Hello. How are you?","chunk":0}
 ```
 
-`sessionId` identifies one process run. `segmentId` is stable within that session
-and encodes the source chunk, Whisper item, and turn position. `revision` starts at
-zero; the current CLI emits immutable revision-zero records and reserves the field
-for future correction/upsert records.
+- `sessionId` identifies one process run.
+- `segmentId` is stable within that session and encodes the source chunk,
+  Whisper item, and speaker-turn position.
+- `revision` is currently always `0`; it is reserved for future correction or
+  upsert records.
+- `speakerStatus` can be `attributed`, `ambiguous`, or `unknown`.
+- `speakerConfidence` is best-effort evidence from Jitsi's dominant-speaker
+  signal, not diarization certainty.
 
-Temporary WAV chunks are deleted after a clean shutdown. Add `--keep-audio` when
-debugging capture or transcription.
+Adjacent audio windows overlap by two seconds. Watermarks delay boundary speech
+until the next window and prevent duplicate segment output.
 
-Adjacent windows overlap by two seconds. Segments near a boundary are delayed until
-the next window, then absolute timestamp watermarks prevent duplicate output.
-
-Speaker confidence combines the freshness of the dominant-speaker sample with the
-amount of supporting evidence. A turn can still include a likely speaker while
-being marked `ambiguous` when two participants are equally close in the Jitsi
-activity signal. Internally, the tracker also emits Vexa-style speaker start,
-end, and two-second heartbeat events; explicit end events prevent stale names from
-bleeding into later speech.
-
-## How it works
+## Architecture
 
 ```text
 Jitsi room
@@ -185,42 +198,39 @@ Overlapping windows + Silero VAD
     ↓
 Persistent local whisper.cpp worker
     ↓
-Speaker hint binder + word-level attribution
+Speaker hint binder + Whisper word timestamps
     ↓
-JSONL transcript
+Append-only JSONL transcript
 ```
 
-The Jitsi navigation and admission behavior is adapted from Vexa's isolated join
-module. See [NOTICE](NOTICE) for the pinned upstream revision and attribution.
+The join and admission flow is adapted from Vexa's isolated Jitsi join module.
+The speaker tracker emits start, heartbeat, and end events; the local binder
+lag-corrects those events, rejects short flickers, and marks competing evidence
+ambiguous. See [NOTICE](NOTICE) for the exact upstream attribution and license.
 
 ## Privacy and consent
 
-Audio is processed locally; Jitscribe does not upload recordings or transcripts.
-It does connect to the supplied Jitsi deployment and downloads the Whisper model
-during initial setup.
+Jitscribe is designed for local processing: it does not upload recordings or
+transcripts and has no telemetry. It does connect to the supplied Jitsi host and
+downloads the Whisper models during initial setup.
 
-The bot is deliberately visible in the meeting. You are responsible for notifying
-participants and obtaining any consent required by local law or organizational policy.
+The bot is deliberately visible in the participant list. Notify participants and
+obtain any consent required by local law or organizational policy before
+recording or transcribing a meeting. Avoid putting reusable meeting passwords in
+shell history; this alpha accepts `--password` on the command line only.
 
-Never place meeting passwords directly in shell history on a shared system. Prefer
-rooms without reusable passwords while this alpha only accepts `--password` on the
-command line.
+## Current limitations
 
-## Limitations
-
-- Linux only
-- One meeting per process
-- Speaker attribution is best-effort: it aligns Whisper words with Jitsi's
-  dominant-speaker signal through a lag-corrected overlap binder and can be
-  ambiguous during overlap or rapid turns
-- Unlike Vexa's multi-service pipeline, Jitscribe does not have diarizer cluster
-  IDs or mutable late-repaint updates; IDs are session-scoped and unresolved turns
-  remain `unknown`
-- Headless mode is implemented but has not completed a live validation run
-- The persistent Whisper worker handles one audio chunk at a time, so output arrives
-  after each configured chunk interval rather than word-by-word
-- Jitsi interface changes may require selector updates
-- Authenticated Jitsi deployments are not yet supported
+- Linux only; one meeting per process.
+- Speaker attribution is based on Jitsi's dominant-speaker hints. It is useful
+  for clear turn-taking but can be ambiguous during overlap or rapid turns.
+- There are no diarizer cluster IDs or mutable late-repaint updates yet; an
+  unresolved turn remains `unknown`.
+- Authenticated Jitsi deployments and per-participant audio lanes are not yet
+  supported.
+- The persistent Whisper worker processes one chunk at a time, so output arrives
+  after each configured interval rather than word-by-word.
+- Jitsi UI changes may require selector updates.
 
 ## Development
 
@@ -231,11 +241,19 @@ npm run build
 npm pack --dry-run
 ```
 
-The test suite includes a mocked headless join-to-transcript flow, including chunk
-discovery, word-level attribution, and JSONL output. CI runs these checks on Ubuntu
-24.04. Live browser tests require a controlled Jitsi room and are not run against
-public rooms automatically.
+The tests cover argument parsing, URL construction, speaker lifecycle and
+binding, overlap/watermark behavior, and a mocked headless join-to-transcript
+flow. GitHub Actions runs these checks on every push and pull request. Live
+browser tests require a controlled Jitsi room and are not run against public
+rooms automatically.
 
-## License
+Changes to joining, admission, audio routing, or reconnect behavior should be
+validated against a controlled room before release. Do not commit models, audio,
+recordings, transcripts, credentials, or meeting URLs; see
+[CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
-Apache License 2.0. See [LICENSE](LICENSE) and [NOTICE](NOTICE).
+## License and attribution
+
+Jitscribe is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and
+[NOTICE](NOTICE). It includes portions adapted from
+[Vexa](https://github.com/Vexa-ai/vexa), also under Apache-2.0.
