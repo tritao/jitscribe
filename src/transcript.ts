@@ -33,6 +33,10 @@ export function parseWhisperResponse(document: WhisperServerResponse): WhisperSe
   });
 }
 
+export function shouldEmitSegment(endMs: number, emittedThroughMs: number, watermarkMs: number): boolean {
+  return endMs > emittedThroughMs && endMs <= watermarkMs;
+}
+
 async function availablePort(): Promise<number> {
   return new Promise((resolve, reject) => {
     const server = createServer();
@@ -51,13 +55,15 @@ export class WhisperWorker {
   private stderr = "";
   private processError?: Error;
 
-  constructor(private command: string, private model: string) {}
+  constructor(private command: string, private model: string, private vadModel?: string) {}
 
   async start(timeoutMs = 30_000): Promise<void> {
     if (this.child) return;
     const port = await availablePort();
     this.baseUrl = `http://127.0.0.1:${port}`;
-    const child = spawn(this.command, ["-m", this.model, "--host", "127.0.0.1", "--port", String(port), "-nlp"], {
+    const args = ["-m", this.model, "--host", "127.0.0.1", "--port", String(port), "-nlp"];
+    if (this.vadModel) args.push("--vad", "-vm", this.vadModel);
+    const child = spawn(this.command, args, {
       stdio: ["ignore", "ignore", "pipe"],
     });
     this.child = child;

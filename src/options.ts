@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 const PROJECT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const LOCAL_WHISPER = resolve(PROJECT_ROOT, ".deps/whisper.cpp/build/bin/whisper-server");
 const LOCAL_MODEL = resolve(PROJECT_ROOT, ".deps/whisper.cpp/models/ggml-small.bin");
+const LOCAL_VAD_MODEL = resolve(PROJECT_ROOT, ".deps/whisper.cpp/models/ggml-silero-v6.2.0.bin");
 
 export interface Options {
   meetingUrl: string;
@@ -13,13 +14,17 @@ export interface Options {
   audio: string;
   whisper: string;
   model: string;
+  vadModel: string;
   language: string;
   chunkSeconds: number;
+  overlapSeconds: number;
   maxRetries: number;
   admissionTimeoutSeconds: number;
   browser?: string;
   headed: boolean;
   keepAudio: boolean;
+  verbose: boolean;
+  logFormat: "text" | "json";
 }
 
 export function normalizeMeeting(value: string, host = "https://meet.jit.si"): string {
@@ -43,7 +48,7 @@ export function parseArgs(argv: string[]): Options {
   while (args.length) {
     const arg = args.shift()!;
     if (!arg.startsWith("--")) { positional.push(arg); continue; }
-    if (["--headed", "--keep-audio", "--help"].includes(arg)) { flags.add(arg); continue; }
+    if (["--headed", "--keep-audio", "--verbose", "--help"].includes(arg)) { flags.add(arg); continue; }
     const value = args.shift();
     if (!value || value.startsWith("--")) throw new Error(`${arg} requires a value`);
     values.set(arg, value);
@@ -53,6 +58,11 @@ export function parseArgs(argv: string[]): Options {
   if (!meeting) throw new Error("meeting id or URL is required");
   const room = basename(new URL(normalizeMeeting(meeting, values.get("--host"))).pathname) || "meeting";
   const output = resolve(values.get("--output") ?? `${room}.jsonl`);
+  const chunkSeconds = positiveInt(values.get("--chunk-seconds") ?? "15", "chunk-seconds");
+  const overlapSeconds = nonnegativeInt(values.get("--overlap-seconds") ?? "2", "overlap-seconds");
+  if (overlapSeconds >= chunkSeconds) throw new Error("--overlap-seconds must be smaller than --chunk-seconds");
+  const logFormat = values.get("--log-format") ?? "text";
+  if (logFormat !== "text" && logFormat !== "json") throw new Error("--log-format must be text or json");
   return {
     meetingUrl: normalizeMeeting(meeting, values.get("--host")),
     name: values.get("--name") ?? "Transcription Bot",
@@ -61,13 +71,17 @@ export function parseArgs(argv: string[]): Options {
     audio: resolve(values.get("--audio") ?? output.replace(/\.jsonl$/i, "") + ".wav"),
     whisper: values.get("--whisper") ?? LOCAL_WHISPER,
     model: values.get("--model") ?? LOCAL_MODEL,
+    vadModel: values.get("--vad-model") ?? LOCAL_VAD_MODEL,
     language: values.get("--language") ?? "auto",
-    chunkSeconds: positiveInt(values.get("--chunk-seconds") ?? "15", "chunk-seconds"),
+    chunkSeconds,
+    overlapSeconds,
     maxRetries: nonnegativeInt(values.get("--max-retries") ?? "10", "max-retries"),
     admissionTimeoutSeconds: positiveInt(values.get("--admission-timeout") ?? "300", "admission-timeout"),
     browser: values.get("--browser"),
     headed: flags.has("--headed"),
     keepAudio: flags.has("--keep-audio"),
+    verbose: flags.has("--verbose"),
+    logFormat,
   };
 }
 

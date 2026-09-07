@@ -9,6 +9,7 @@
   "files": [
     "dist/cli.js",
     "dist/jitsi.js",
+    "dist/logging.js",
     "dist/options.js",
     "dist/processes.js",
     "dist/speakers.js",

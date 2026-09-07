@@ -54,7 +54,8 @@ npm link
 ```
 
 `setup:whisper` builds a pinned whisper.cpp revision and downloads the multilingual
-`small` model. The download is approximately 465 MB and is verified with SHA-256.
+`small` model plus the Silero VAD model. The main download is approximately 465 MB;
+both files are verified with SHA-256.
 
 Verify the installation:
 
@@ -99,13 +100,17 @@ Use `Ctrl+C` to leave the room and stop transcription.
 --language CODE            Whisper language: auto, en, pt, ...
 --output FILE.jsonl        Transcript destination
 --chunk-seconds N          Transcription interval; default 15
+--overlap-seconds N        Boundary overlap; default 2
 --max-retries N            Maximum rejoin attempts; default 10
 --admission-timeout N      Lobby timeout in seconds; default 300
 --headed                   Display Chromium for diagnosis
 --keep-audio               Retain temporary WAV chunks
+--verbose                  Show diagnostic subprocess logs
+--log-format text|json     Lifecycle log format
 --browser PATH             Override Chrome/Chromium executable
 --whisper PATH             Override whisper-server
 --model PATH               Override the GGML model
+--vad-model PATH           Override the Silero VAD model
 ```
 
 Use a visible browser when diagnosing admission or Jitsi compatibility:
@@ -126,6 +131,9 @@ independently durable JSON object:
 Temporary WAV chunks are deleted after a clean shutdown. Add `--keep-audio` when
 debugging capture or transcription.
 
+Adjacent windows overlap by two seconds. Segments near a boundary are delayed until
+the next window, then absolute timestamp watermarks prevent duplicate output.
+
 ## How it works
 
 ```text
@@ -136,6 +144,8 @@ Chromium controlled through Playwright
 Dedicated PulseAudio null sink
     ↓
 FFmpeg 16 kHz mono chunks
+    ↓
+Overlapping windows + Silero VAD
     ↓
 Persistent local whisper.cpp worker
     ↓
