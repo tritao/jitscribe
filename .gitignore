@@ -5,3 +5,7 @@ dist/
 *.wav
 .*.chunks-*/
 models/
+native/target/
+native/jitscribe-audio-napi/*.node
+native/jitscribe-audio-napi/index.cjs
+native/jitscribe-audio-napi/index.d.ts

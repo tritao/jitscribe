@@ -19,4 +19,10 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run build
+      - uses: dtolnay/rust-toolchain@stable
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y libasound2-dev libpipewire-0.3-dev libpulse-dev
+      - run: npm run test:native
+      - run: npm run build:native
+      - run: node -e "const addon = require('./native/jitscribe-audio-napi/index.cjs'); if (typeof addon.listAudioDevices !== 'function') process.exit(1)"
       - run: npm pack --dry-run

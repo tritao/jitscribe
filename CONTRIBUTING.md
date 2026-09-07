@@ -6,6 +6,7 @@ Install Node.js 22 or newer, then run:
 npm ci
 npm test
 npm run build
+npm run test:native
 ```
 
 Browser behavior should have deterministic unit coverage where possible. Changes to

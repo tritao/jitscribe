@@ -3,9 +3,18 @@
   "version": "0.1.0-alpha.0",
   "description": "A local-first Jitsi meeting bot with offline Whisper transcription",
   "license": "Apache-2.0",
-  "keywords": ["jitsi", "transcription", "whisper", "meeting-bot"],
-  "os": ["linux"],
-  "engines": { "node": ">=22" },
+  "keywords": [
+    "jitsi",
+    "transcription",
+    "whisper",
+    "meeting-bot"
+  ],
+  "os": [
+    "linux"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
   "files": [
     "dist/cli.js",
     "dist/binder.js",
@@ -22,12 +31,16 @@
     "NOTICE"
   ],
   "type": "module",
-  "bin": { "jitscribe": "dist/cli.js" },
+  "bin": {
+    "jitscribe": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
+    "build:native": "napi build --manifest-path native/jitscribe-audio-napi/Cargo.toml --release --platform --output-dir native/jitscribe-audio-napi --dts index.d.ts --js index.cjs",
     "bootstrap": "bash scripts/bootstrap.sh",
     "prepack": "npm run build",
     "setup:whisper": "bash scripts/setup-whisper.sh",
+    "test:native": "cargo test --workspace --manifest-path native/Cargo.toml",
     "test": "tsx --test src/*.test.ts",
     "start": "tsx src/cli.ts"
   },
@@ -35,6 +48,7 @@
     "playwright-core": "1.56.0"
   },
   "devDependencies": {
+    "@napi-rs/cli": "^3.9.0",
     "@types/node": "^22.0.0",
     "tsx": "^4.20.0",
     "typescript": "^5.9.0"

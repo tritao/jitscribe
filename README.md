@@ -252,6 +252,23 @@ validated against a controlled room before release. Do not commit models, audio,
 recordings, transcripts, credentials, or meeting URLs; see
 [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).
 
+## Experimental native audio addon
+
+The repository contains an experimental Rust/CPAL audio engine exposed through
+Node-API. It is not enabled by the main CLI yet; the existing FFmpeg path remains
+the validated default. Build and test the addon locally with Rust installed:
+
+```bash
+npm run test:native
+npm run build:native
+node -e "const a = require('./native/jitscribe-audio-napi/index.cjs'); console.log(a.listAudioDevices())"
+```
+
+The addon currently emits normalized 16 kHz PCM events and device metadata. It
+does not yet provide platform-specific application isolation or ship prebuilt
+artifacts for every operating system. Those are the next steps before enabling
+`--audio-backend native`.
+
 ## License and attribution
 
 Jitscribe is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and
