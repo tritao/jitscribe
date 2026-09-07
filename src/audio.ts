@@ -39,6 +39,30 @@ export interface NativeAudioModule {
   AudioCapture: {
     start(options?: AudioCaptureOptions): NativeAudioCapture;
   };
+  WhisperTranscriber: new (modelPath: string, language?: string) => NativeWhisperTranscriber;
+}
+
+export interface NativeWhisperWord {
+  fromMs: number;
+  toMs: number;
+  text: string;
+  probability: number;
+}
+
+export interface NativeWhisperSegment {
+  startMs: number;
+  endMs: number;
+  text: string;
+  words: NativeWhisperWord[];
+}
+
+export interface NativeWhisperResult {
+  text: string;
+  segments: NativeWhisperSegment[];
+}
+
+export interface NativeWhisperTranscriber {
+  transcribe(pcmI16Le: Buffer): NativeWhisperResult;
 }
 
 const require = createRequire(import.meta.url);

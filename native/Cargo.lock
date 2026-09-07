@@ -663,6 +663,7 @@ name = "jitscribe-audio-napi"
 version = "0.1.0"
 dependencies = [
  "jitscribe-audio-core",
+ "jitscribe-whisper-core",
  "napi",
  "napi-build",
  "napi-derive",

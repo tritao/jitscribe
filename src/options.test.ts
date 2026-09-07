@@ -13,6 +13,13 @@ test("parses retry and identity options", () => {
   assert.equal(o.name, "Notes"); assert.equal(o.maxRetries, 3);
   assert.equal(o.overlapSeconds, 2);
 });
+test("selects the opt-in native transcriber", () => {
+  const o = parseArgs(["Room", "--transcriber", "native"]);
+  assert.equal(o.transcriber, "native");
+});
+test("rejects an unknown transcriber", () => {
+  assert.throws(() => parseArgs(["Room", "--transcriber", "other"]), /transcriber must be server or native/);
+});
 test("rejects overlap as long as its chunk", () => {
   assert.throws(() => parseArgs(["Room", "--chunk-seconds", "5", "--overlap-seconds", "5"]));
 });

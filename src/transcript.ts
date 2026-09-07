@@ -3,6 +3,8 @@ import { basename } from "node:path";
 import { createServer } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
 import type { TimedWord } from "./speakers.js";
+import { loadNativeAudio, type NativeWhisperTranscriber } from "./audio.js";
+import type { WhisperTranscriber } from "./pipeline.js";
 
 export interface WhisperSegment { fromMs: number; toMs: number; text: string; words: TimedWord[]; }
 export interface Segment {
@@ -37,6 +39,74 @@ export function parseWhisperResponse(document: WhisperServerResponse): WhisperSe
     const words = (segment.words ?? []).map(word => ({ fromMs: Math.round((word.start ?? segment.start ?? 0) * 1000), toMs: Math.round((word.end ?? segment.end ?? 0) * 1000), text: String(word.word ?? "").trim(), probability: word.probability })).filter(word => word.text);
     return [{ fromMs: Math.round((segment.start ?? 0) * 1000), toMs: Math.round((segment.end ?? 0) * 1000), text, words }];
   });
+}
+
+/** Persistent in-process Whisper backend, enabled explicitly with --transcriber native. */
+export class NativeWhisperWorker implements WhisperTranscriber {
+  private native?: NativeWhisperTranscriber;
+
+  constructor(private readonly model: string, private readonly language: string) {}
+
+  async start(): Promise<void> {
+    if (this.native) return;
+    const addon = loadNativeAudio();
+    if (typeof addon.WhisperTranscriber !== "function") {
+      throw new Error("native addon does not include the Whisper backend; run npm run build:native");
+    }
+    this.native = new addon.WhisperTranscriber(this.model, this.language);
+  }
+
+  async transcribe(wav: string, _language?: string): Promise<WhisperSegment[]> {
+    if (!this.native) await this.start();
+    const pcm = await readPcm16MonoWav(wav);
+    const result = this.native!.transcribe(pcm);
+    return result.segments
+      .map(segment => ({
+        fromMs: segment.startMs,
+        toMs: segment.endMs,
+        text: segment.text.trim(),
+        words: segment.words
+          .map(word => ({ fromMs: word.fromMs, toMs: word.toMs, text: word.text.trim(), probability: word.probability }))
+          .filter(word => word.text),
+      }))
+      .filter(segment => isMeaningfulTranscript(segment.text));
+  }
+
+  async stop(): Promise<void> {
+    this.native = undefined;
+  }
+}
+
+async function readPcm16MonoWav(path: string): Promise<Buffer> {
+  const bytes = await readFile(path);
+  if (bytes.length < 12 || bytes.toString("ascii", 0, 4) !== "RIFF" || bytes.toString("ascii", 8, 12) !== "WAVE") {
+    throw new Error(`native Whisper requires a RIFF/WAVE file: ${path}`);
+  }
+  let offset = 12;
+  let sampleRate = 0;
+  let channels = 0;
+  let bits = 0;
+  let format = 0;
+  let data: Buffer | undefined;
+  while (offset + 8 <= bytes.length) {
+    const id = bytes.toString("ascii", offset, offset + 4);
+    const size = bytes.readUInt32LE(offset + 4);
+    offset += 8;
+    if (offset + size > bytes.length) throw new Error(`truncated WAV chunk in ${path}`);
+    if (id === "fmt " && size >= 16) {
+      format = bytes.readUInt16LE(offset);
+      channels = bytes.readUInt16LE(offset + 2);
+      sampleRate = bytes.readUInt32LE(offset + 4);
+      bits = bytes.readUInt16LE(offset + 14);
+    } else if (id === "data") {
+      data = bytes.subarray(offset, offset + size);
+    }
+    offset += size + (size % 2);
+  }
+  if (format !== 1 || channels !== 1 || sampleRate !== 16_000 || bits !== 16 || !data) {
+    throw new Error(`native Whisper requires PCM16 mono 16 kHz WAV: ${path}`);
+  }
+  return data;
 }
 
 export function shouldEmitSegment(endMs: number, emittedThroughMs: number, watermarkMs: number): boolean {

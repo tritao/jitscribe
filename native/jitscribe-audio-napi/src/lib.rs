@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 
 use jitscribe_audio_core::{self as core, CaptureEvent, CaptureOptions};
+use jitscribe_whisper_core::{self as whisper, WhisperTranscriber as CoreWhisperTranscriber};
 use napi::bindgen_prelude::*;
 use napi_derive::napi;
 
@@ -36,6 +37,30 @@ pub struct AudioEvent {
     pub timestamp_ms: Option<String>,
     pub message: Option<String>,
     pub recoverable: Option<bool>,
+}
+
+#[derive(Clone)]
+#[napi(object)]
+pub struct WhisperWord {
+    pub from_ms: f64,
+    pub to_ms: f64,
+    pub text: String,
+    pub probability: f64,
+}
+
+#[derive(Clone)]
+#[napi(object)]
+pub struct WhisperSegment {
+    pub start_ms: f64,
+    pub end_ms: f64,
+    pub text: String,
+    pub words: Vec<WhisperWord>,
+}
+
+#[napi(object)]
+pub struct WhisperResult {
+    pub text: String,
+    pub segments: Vec<WhisperSegment>,
 }
 
 #[napi]
@@ -124,6 +149,70 @@ impl Drop for AudioCapture {
                 session.stop();
             }
         }
+    }
+}
+
+/// Persistent in-process Whisper model. This is intentionally separate from
+/// AudioCapture so callers can feed recorder chunks or another PCM source.
+#[napi]
+pub struct WhisperTranscriber {
+    inner: Mutex<CoreWhisperTranscriber>,
+}
+
+#[napi]
+impl WhisperTranscriber {
+    #[napi(constructor)]
+    pub fn new(model_path: String, language: Option<String>) -> Result<Self> {
+        let transcriber = CoreWhisperTranscriber::new(model_path)
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+        let transcriber = match language {
+            Some(value) => transcriber.with_language(value),
+            None => transcriber,
+        };
+        Ok(Self {
+            inner: Mutex::new(transcriber),
+        })
+    }
+
+    #[napi]
+    pub fn transcribe(&self, pcm_i16_le: Buffer) -> Result<WhisperResult> {
+        if pcm_i16_le.len() % 2 != 0 {
+            return Err(Error::from_reason("PCM buffer must contain 16-bit samples"));
+        }
+        let samples: Vec<i16> = pcm_i16_le
+            .chunks_exact(2)
+            .map(|chunk| i16::from_le_bytes([chunk[0], chunk[1]]))
+            .collect();
+        let samples = whisper::pcm_i16_to_f32(&samples);
+        let transcriber = self
+            .inner
+            .lock()
+            .map_err(|_| Error::from_reason("Whisper model lock poisoned"))?;
+        let result = transcriber
+            .transcribe(&samples)
+            .map_err(|error| Error::from_reason(error.to_string()))?;
+        Ok(WhisperResult {
+            text: result.text,
+            segments: result
+                .segments
+                .into_iter()
+                .map(|segment| WhisperSegment {
+                    start_ms: segment.start_ms as f64,
+                    end_ms: segment.end_ms as f64,
+                    text: segment.text,
+                    words: segment
+                        .words
+                        .into_iter()
+                        .map(|word| WhisperWord {
+                            from_ms: word.from_ms as f64,
+                            to_ms: word.to_ms as f64,
+                            text: word.text,
+                            probability: f64::from(word.probability),
+                        })
+                        .collect(),
+                })
+                .collect(),
+        })
     }
 }
 

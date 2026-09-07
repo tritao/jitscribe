@@ -5,7 +5,7 @@ import { dirname, basename } from "node:path";
 import { chromium } from "playwright-core";
 import { parseArgs } from "./options.js";
 import { join, isJoined } from "./jitsi.js";
-import { WhisperWorker } from "./transcript.js";
+import { NativeWhisperWorker, WhisperWorker } from "./transcript.js";
 import { checkedSpawn, createPulseSink, findExecutable, stopProcess } from "./processes.js";
 import { SpeakerTracker } from "./speakers.js";
 import { TranscriptPipeline } from "./pipeline.js";
@@ -19,6 +19,7 @@ const HELP = `Usage: jitscribe join <room-or-url> [options]
   --output FILE.jsonl        Transcript output
   --audio FILE.wav           Audio output base name
   --whisper PATH             Override the bundled whisper.cpp server
+  --transcriber server|native Transcription backend (default: server)
   --model PATH               Override the bundled multilingual small model
   --vad-model PATH           Override the bundled Silero VAD model
   --language CODE            auto, en, pt, ...
@@ -41,9 +42,11 @@ async function main(): Promise<void> {
   }
   const log = new Logger(opts.verbose, opts.logFormat);
   await stat(opts.model).catch(() => { throw new Error(`Whisper model not found: ${opts.model}`); });
-  await stat(opts.vadModel).catch(() => { throw new Error(`Whisper VAD model not found: ${opts.vadModel}`); });
+  if (opts.transcriber === "server") {
+    await stat(opts.vadModel).catch(() => { throw new Error(`Whisper VAD model not found: ${opts.vadModel}`); });
+  }
   const browserPath = findExecutable(opts.browser, ["chromium", "chromium-browser", "google-chrome", "google-chrome-stable"]);
-  const whisper = findExecutable(opts.whisper, ["whisper-server"]);
+  const whisper = opts.transcriber === "server" ? findExecutable(opts.whisper, ["whisper-server"]) : undefined;
   const ffmpeg = findExecutable(undefined, ["ffmpeg"]);
   await mkdir(dirname(opts.output), { recursive: true });
   const chunkDir = `${dirname(opts.audio)}/.${basename(opts.audio)}.chunks-${process.pid}`;
@@ -55,7 +58,7 @@ async function main(): Promise<void> {
   let recorder: ReturnType<typeof checkedSpawn> | undefined;
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   let speakers: SpeakerTracker | undefined;
-  let worker: WhisperWorker | undefined;
+  let worker: WhisperWorker | NativeWhisperWorker | undefined;
   let transcribeReady: ((includeLast?: boolean) => Promise<void>) | undefined;
 
   try {
@@ -70,7 +73,9 @@ async function main(): Promise<void> {
     const page = await context.newPage();
     speakers = new SpeakerTracker(page, opts.name);
     speakers.start();
-    const whisperWorker = new WhisperWorker(whisper, opts.model, opts.vadModel);
+    const whisperWorker = opts.transcriber === "native"
+      ? new NativeWhisperWorker(opts.model, opts.language)
+      : new WhisperWorker(whisper!, opts.model, opts.vadModel);
     worker = whisperWorker;
     const pipeline = new TranscriptPipeline({
       chunkDir,

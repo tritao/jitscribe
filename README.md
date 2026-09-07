@@ -152,6 +152,7 @@ jitscribe join YourRoom --headed --verbose
 --admission-timeout N      Lobby timeout in seconds (default: 300)
 --browser PATH             Chromium/Chrome executable override
 --whisper PATH             whisper-server executable override
+--transcriber server|native Transcription backend (default: server)
 --model PATH               GGML model override
 --vad-model PATH           Silero VAD model override
 --keep-audio               Retain temporary WAV chunks
@@ -274,12 +275,25 @@ artifacts for every operating system. Those are the next steps before enabling
 `native/jitscribe-whisper-core` is a separate Rust crate that uses
 [`whisper-cpp-plus`](https://github.com/operator-kit/whisper-cpp-plus-rs) to
 consume the same normalized PCM and return timestamped segments. It builds as
-part of `npm run test:native`, but is not wired into the CLI yet. This lets us
-benchmark it against the current persistent `whisper-server` worker without
-changing the production path. The crate currently expects a GGML model and
+part of `npm run test:native` and is available through the opt-in native CLI
+backend. The default server path remains unchanged, so we can benchmark it
+against the current persistent `whisper-server` worker without changing the
+production path. The crate currently expects a GGML model and
 does not load or download models itself. Its segments now include Whisper token
 timestamps grouped into word records (`from_ms`, `to_ms`, `text`, and
 `probability`), matching the data needed by Jitscribe's speaker binder.
+
+The backend can be selected for a live run after building the addon:
+
+```bash
+npm run build:native
+jitscribe join ROOM --transcriber native --language en
+```
+
+This keeps the same FFmpeg recorder, overlap handling, transcript schema, and
+speaker binder. Native mode currently does not use the Silero VAD model, so
+`--vad-model` is only used by the default server backend. The default remains
+`server` until longer live-room comparisons are complete.
 
 Run the headless native benchmark against a 16 kHz mono PCM16 WAV:
 

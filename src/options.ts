@@ -13,6 +13,7 @@ export interface Options {
   output: string;
   audio: string;
   whisper: string;
+  transcriber: "server" | "native";
   model: string;
   vadModel: string;
   language: string;
@@ -63,6 +64,8 @@ export function parseArgs(argv: string[]): Options {
   if (overlapSeconds >= chunkSeconds) throw new Error("--overlap-seconds must be smaller than --chunk-seconds");
   const logFormat = values.get("--log-format") ?? "text";
   if (logFormat !== "text" && logFormat !== "json") throw new Error("--log-format must be text or json");
+  const transcriber = values.get("--transcriber") ?? "server";
+  if (transcriber !== "server" && transcriber !== "native") throw new Error("--transcriber must be server or native");
   return {
     meetingUrl: normalizeMeeting(meeting, values.get("--host")),
     name: values.get("--name") ?? "Transcription Bot",
@@ -70,6 +73,7 @@ export function parseArgs(argv: string[]): Options {
     output,
     audio: resolve(values.get("--audio") ?? output.replace(/\.jsonl$/i, "") + ".wav"),
     whisper: values.get("--whisper") ?? LOCAL_WHISPER,
+    transcriber,
     model: values.get("--model") ?? LOCAL_MODEL,
     vadModel: values.get("--vad-model") ?? LOCAL_VAD_MODEL,
     language: values.get("--language") ?? "auto",
