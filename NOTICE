@@ -3,4 +3,5 @@ revision 3f5c3c030198b5e3d0d8339d66bece6136ada0d5. Copyright Vexa
 contributors, licensed under the Apache License, Version 2.0.
 
 The Jitsi URL construction and browser join behavior in src/jitsi.ts are modified
-from core/meetings/modules/join/src/jitsi in Vexa.
+from core/meetings/modules/join/src/jitsi in Vexa. The dominant-speaker state probe
+in src/speakers.ts is adapted from core/meetings/modules/jitsi-capture.

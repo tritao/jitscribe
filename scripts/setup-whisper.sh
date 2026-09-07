@@ -14,8 +14,9 @@ fi
 git -C "$source_dir" fetch --depth 1 origin "$whisper_revision"
 git -C "$source_dir" checkout --detach "$whisper_revision"
 
-cmake -S "$source_dir" -B "$source_dir/build" \
+cmake --fresh -S "$source_dir" -B "$source_dir/build" \
   -DCMAKE_BUILD_TYPE=Release \
+  -DGGML_CCACHE=OFF \
   -DWHISPER_BUILD_TESTS=OFF \
   -DWHISPER_BUILD_EXAMPLES=ON
 cmake --build "$source_dir/build" --config Release -j"$(nproc)"

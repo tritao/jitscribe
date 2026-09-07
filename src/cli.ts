@@ -6,6 +6,7 @@ import { parseArgs } from "./options.js";
 import { join, isJoined } from "./jitsi.js";
 import { appendSegment, transcribeChunk } from "./transcript.js";
 import { checkedSpawn, createPulseSink, findExecutable, waitForStableFiles } from "./processes.js";
+import { attributeSpeaker, SpeakerTracker } from "./speakers.js";
 
 const HELP = `Usage: jitscribe join <room-or-url> [options]
 
@@ -43,21 +44,37 @@ async function main(): Promise<void> {
   const pulseSource = process.env.JITSI_PULSE_SINK ?? ownedPulse!.monitor;
   const pattern = `${chunkDir}/chunk-%06d.wav`;
   const recorder = checkedSpawn(ffmpeg, ["-nostdin", "-f", "pulse", "-i", pulseSource, "-ac", "1", "-ar", "16000", "-f", "segment", "-segment_time", String(opts.chunkSeconds), "-reset_timestamps", "1", pattern]);
+  const captureStartedAt = Date.now();
   const browser = await chromium.launch({ executablePath: browserPath, headless: !opts.headed, env: { ...process.env, PULSE_SINK: ownedPulse?.sink ?? process.env.PULSE_SINK ?? "" }, args: ["--autoplay-policy=no-user-gesture-required", "--disable-dev-shm-usage"] });
   const context = await browser.newContext({ permissions: ["microphone", "camera"] });
   const page = await context.newPage();
+  const speakers = new SpeakerTracker(page, opts.name);
+  speakers.start();
   let stopping = false;
   process.once("SIGINT", () => { stopping = true; });
   const seen = new Set<string>();
-  let chunk = 0;
   const transcribeReady = async (includeLast = false) => {
     for (const wav of await waitForStableFiles(chunkDir, "chunk-", seen, includeLast)) {
       seen.add(wav);
-      const text = await transcribeChunk(whisper, opts.model, opts.language, wav);
-      if (text) {
-        const segment = { timestamp: new Date().toISOString(), text, chunk: chunk++ };
+      const whisperSegments = await transcribeChunk(whisper, opts.model, opts.language, wav);
+      const chunkNumber = Number(/chunk-(\d+)\.wav$/.exec(wav)?.[1] ?? 0);
+      const chunkStart = captureStartedAt + chunkNumber * opts.chunkSeconds * 1000;
+      for (const item of whisperSegments) {
+        const startMs = chunkStart + item.fromMs;
+        const endMs = chunkStart + item.toMs;
+        const attribution = attributeSpeaker(speakers.observations, startMs, endMs);
+        const segment = {
+          timestamp: new Date().toISOString(),
+          start: new Date(startMs).toISOString(),
+          end: new Date(endMs).toISOString(),
+          text: item.text,
+          chunk: chunkNumber,
+          speaker: attribution.speaker,
+          speakerId: attribution.speakerId,
+          speakerConfidence: attribution.confidence,
+        };
         await appendSegment(opts.output, segment);
-        console.log(`[${segment.timestamp}] ${text}`);
+        console.log(`[${segment.start}] ${segment.speaker ?? "Unknown"}: ${segment.text}`);
       }
     }
   };
@@ -82,6 +99,7 @@ async function main(): Promise<void> {
       }
     }
   } finally {
+    speakers.stop();
     recorder.kill("SIGINT");
     await new Promise(r => setTimeout(r, 500));
     await transcribeReady(true).catch(error => console.error(`final transcription failed: ${error.message}`));

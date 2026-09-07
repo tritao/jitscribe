@@ -20,6 +20,7 @@ self-hosted Jitsi deployments.
 - Isolates Chromium audio from other desktop audio
 - Transcribes locally with the multilingual Whisper `small` model
 - Appends completed segments to a crash-resistant JSONL file
+- Adds best-effort speaker names from Jitsi's dominant-speaker state
 - Runs with headless Chromium by default
 
 ## Requirements
@@ -119,7 +120,7 @@ By default, a room called `YourRoom` produces `YourRoom.jsonl`. Each line is an
 independently durable JSON object:
 
 ```json
-{"timestamp":"2026-09-02T11:39:34.105Z","text":"Hello. How are you?","chunk":0}
+{"timestamp":"2026-09-02T11:39:36.105Z","start":"2026-09-02T11:39:34.105Z","end":"2026-09-02T11:39:36.000Z","speaker":"Alice","speakerId":"participant-id","speakerConfidence":0.8,"text":"Hello. How are you?","chunk":0}
 ```
 
 Temporary WAV chunks are deleted after a clean shutdown. Add `--keep-audio` when
@@ -161,7 +162,8 @@ command line.
 
 - Linux only
 - One meeting per process
-- Mixed meeting audio; no reliable speaker attribution yet
+- Speaker attribution is best-effort: it aligns mixed-audio Whisper segments with
+  Jitsi's dominant-speaker signal and can be ambiguous during overlap or rapid turns
 - Headless mode is implemented but has not completed a live validation run
 - Whisper is reloaded for every audio chunk, increasing CPU use and latency
 - Jitsi interface changes may require selector updates

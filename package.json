@@ -11,6 +11,7 @@
     "dist/jitsi.js",
     "dist/options.js",
     "dist/processes.js",
+    "dist/speakers.js",
     "dist/transcript.js",
     "scripts/",
     "README.md",
