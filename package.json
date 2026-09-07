@@ -23,6 +23,7 @@
     "dist/options.js",
     "dist/pipeline.js",
     "dist/processes.js",
+    "dist/audio.js",
     "dist/speakers.js",
     "dist/transcript.js",
     "scripts/",
