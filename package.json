@@ -1,0 +1,37 @@
+{
+  "name": "jitsi-transcriber",
+  "version": "0.1.0-alpha.0",
+  "description": "A local-first Jitsi meeting bot with offline Whisper transcription",
+  "license": "Apache-2.0",
+  "keywords": ["jitsi", "transcription", "whisper", "meeting-bot"],
+  "os": ["linux"],
+  "engines": { "node": ">=22" },
+  "files": [
+    "dist/cli.js",
+    "dist/jitsi.js",
+    "dist/options.js",
+    "dist/processes.js",
+    "dist/transcript.js",
+    "scripts/",
+    "README.md",
+    "LICENSE",
+    "NOTICE"
+  ],
+  "type": "module",
+  "bin": { "jitsi-transcriber": "dist/cli.js" },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "setup:whisper": "bash scripts/setup-whisper.sh",
+    "test": "tsx --test src/*.test.ts",
+    "start": "tsx src/cli.ts"
+  },
+  "dependencies": {
+    "playwright-core": "1.56.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.20.0",
+    "typescript": "^5.9.0"
+  }
+}
