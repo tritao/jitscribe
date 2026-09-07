@@ -37,6 +37,7 @@
   "scripts": {
     "build": "tsc",
     "build:native": "napi build --manifest-path native/jitscribe-audio-napi/Cargo.toml --release --platform --output-dir native/jitscribe-audio-napi --dts index.d.ts --js index.cjs",
+    "bench:whisper-native": "cargo run --release --manifest-path native/Cargo.toml -p jitscribe-whisper-core --bin jitscribe-whisper-bench --",
     "bootstrap": "bash scripts/bootstrap.sh",
     "prepack": "npm run build",
     "setup:whisper": "bash scripts/setup-whisper.sh",

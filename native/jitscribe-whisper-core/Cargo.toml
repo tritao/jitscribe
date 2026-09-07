@@ -7,3 +7,9 @@ description = "Experimental in-process Whisper inference for Jitscribe"
 
 [dependencies]
 whisper-cpp-plus = "0.1.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[[bin]]
+name = "jitscribe-whisper-bench"
+path = "src/bin/bench.rs"

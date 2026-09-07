@@ -5,16 +5,17 @@
 //! makes it possible to compare this backend with the existing
 //! process-backed `whisper-server` implementation before changing the CLI.
 
+use serde::Serialize;
 use whisper_cpp_plus::{TranscriptionParams, WhisperContext, WhisperError};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Segment {
     pub start_ms: i64,
     pub end_ms: i64,
     pub text: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct Transcription {
     pub text: String,
     pub segments: Vec<Segment>,

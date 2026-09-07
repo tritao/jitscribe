@@ -279,6 +279,18 @@ benchmark it against the current persistent `whisper-server` worker without
 changing the production path. The crate currently expects a GGML model and
 does not load or download models itself.
 
+Run the headless native benchmark against a 16 kHz mono PCM16 WAV:
+
+```bash
+npm run bench:whisper-native -- \
+  .deps/whisper.cpp/models/ggml-small.bin \
+  path/to/chunk-000000.wav en > native-result.json
+```
+
+The command emits JSON containing elapsed time, full text, and timestamped
+segments, making it suitable for comparing the native result with the existing
+Whisper worker on the same fixture.
+
 ## License and attribution
 
 Jitscribe is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and
