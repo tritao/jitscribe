@@ -4,9 +4,10 @@ import { dirname, basename } from "node:path";
 import { chromium } from "playwright-core";
 import { parseArgs } from "./options.js";
 import { join, isJoined } from "./jitsi.js";
-import { appendSegment, shouldEmitSegment, WhisperWorker } from "./transcript.js";
-import { checkedSpawn, createPulseSink, findExecutable, waitForStableFiles, buildOverlapWindow, stopProcess } from "./processes.js";
-import { attributeSpeaker, buildSpeakerTurns, SpeakerTracker } from "./speakers.js";
+import { WhisperWorker } from "./transcript.js";
+import { checkedSpawn, createPulseSink, findExecutable, stopProcess } from "./processes.js";
+import { SpeakerTracker } from "./speakers.js";
+import { TranscriptPipeline } from "./pipeline.js";
 import { Logger } from "./logging.js";
 
 const HELP = `Usage: jitscribe join <room-or-url> [options]
@@ -68,46 +69,22 @@ async function main(): Promise<void> {
     const page = await context.newPage();
     speakers = new SpeakerTracker(page, opts.name);
     speakers.start();
-    worker = new WhisperWorker(whisper, opts.model, opts.vadModel);
-    const seen = new Set<string>();
-    let emittedThroughMs = captureStartedAt;
-    transcribeReady = async (includeLast = false) => {
-      for (const wav of await waitForStableFiles(chunkDir, "chunk-", seen, includeLast)) {
-        seen.add(wav);
-        const chunkNumber = Number(/chunk-(\d+)\.wav$/.exec(wav)?.[1] ?? 0);
-        const chunkStart = captureStartedAt + chunkNumber * opts.chunkSeconds * 1000;
-        const previous = chunkNumber > 0 ? `${chunkDir}/chunk-${String(chunkNumber - 1).padStart(6, "0")}.wav` : undefined;
-        const windowPath = `${chunkDir}/window-${String(chunkNumber).padStart(6, "0")}.wav`;
-        const input = await buildOverlapWindow(ffmpeg, previous, wav, windowPath, opts.overlapSeconds);
-        const windowStart = chunkStart - (previous ? opts.overlapSeconds * 1000 : 0);
-        const watermark = includeLast ? Number.POSITIVE_INFINITY : chunkStart + (opts.chunkSeconds - opts.overlapSeconds) * 1000;
-        const whisperSegments = await worker!.transcribe(input, opts.language);
-        if (input === windowPath && !opts.keepAudio) await rm(windowPath, { force: true });
-        for (const item of whisperSegments) {
-          const turns = item.words.length ? buildSpeakerTurns(item.words, speakers!.observations) : [{
-            fromMs: item.fromMs, toMs: item.toMs, text: item.text,
-            ...attributeSpeaker(speakers!.observations, windowStart + item.fromMs, windowStart + item.toMs),
-            status: "unknown" as const,
-          }];
-          for (const turn of turns) if (turn.speaker) turn.status = "attributed";
-          for (const turn of turns) {
-          const startMs = windowStart + turn.fromMs;
-          const endMs = windowStart + turn.toMs;
-          if (!shouldEmitSegment(endMs, emittedThroughMs, watermark)) continue;
-          const segment = {
-            timestamp: new Date().toISOString(), start: new Date(startMs).toISOString(),
-            end: new Date(endMs).toISOString(), text: turn.text, chunk: chunkNumber,
-            speaker: turn.speaker, speakerId: turn.speakerId,
-            speakerConfidence: turn.confidence,
-            speakerStatus: turn.status,
-          };
-          await appendSegment(opts.output, segment);
-          console.log(`[${segment.start}] ${segment.speaker ?? "Unknown"}: ${segment.text}`);
-          emittedThroughMs = Math.max(emittedThroughMs, endMs);
-          }
-        }
-      }
-    };
+    const whisperWorker = new WhisperWorker(whisper, opts.model, opts.vadModel);
+    worker = whisperWorker;
+    const pipeline = new TranscriptPipeline({
+      chunkDir,
+      output: opts.output,
+      captureStartedAtMs: captureStartedAt,
+      chunkSeconds: opts.chunkSeconds,
+      overlapSeconds: opts.overlapSeconds,
+      language: opts.language,
+      ffmpeg,
+      keepAudio: opts.keepAudio,
+      worker: whisperWorker,
+      getSpeakerObservations: () => speakers?.observations ?? [],
+      onSegment: segment => console.log(`[${segment.start}] ${segment.speaker ?? "Unknown"}: ${segment.text}`),
+    });
+    transcribeReady = async (includeLast = false) => { await pipeline.process(includeLast); };
     await worker.start();
     for (let attempt = 0; !stopping; attempt++) {
       try {

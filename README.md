@@ -22,6 +22,7 @@ self-hosted Jitsi deployments.
 - Appends completed segments to a crash-resistant JSONL file
 - Adds best-effort speaker names from Jitsi's dominant-speaker state
 - Uses Whisper word timestamps to split a transcript when speakers change
+- Reports attribution confidence and marks competing speaker evidence as `ambiguous`
 - Runs with headless Chromium by default
 
 ## Requirements
@@ -135,6 +136,11 @@ debugging capture or transcription.
 Adjacent windows overlap by two seconds. Segments near a boundary are delayed until
 the next window, then absolute timestamp watermarks prevent duplicate output.
 
+Speaker confidence combines the freshness of the dominant-speaker sample with the
+amount of supporting evidence. A turn can still include a likely speaker while
+being marked `ambiguous` when two participants are equally close in the Jitsi
+activity signal.
+
 ## How it works
 
 ```text
@@ -190,8 +196,10 @@ npm run build
 npm pack --dry-run
 ```
 
-CI runs the same checks on Ubuntu 24.04. Live browser tests require a controlled
-Jitsi room and are not run against public rooms automatically.
+The test suite includes a mocked headless join-to-transcript flow, including chunk
+discovery, word-level attribution, and JSONL output. CI runs these checks on Ubuntu
+24.04. Live browser tests require a controlled Jitsi room and are not run against
+public rooms automatically.
 
 ## License
 

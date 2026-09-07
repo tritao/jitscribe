@@ -11,6 +11,14 @@ test("attributes the speaker with the most observations inside a segment", () =>
   assert.equal(result.speaker, "Alice");
   assert.equal(result.confidence, 0.667);
   assert.equal(result.samples, 3);
+  assert.equal(result.status, "attributed");
+});
+
+test("marks tied interval evidence as ambiguous and discounts a lone sample", () => {
+  const result = attributeSpeaker([sample(100, "a", "Alice"), sample(200, "b", "Bob")], 0, 300);
+  assert.equal(result.speaker, "Alice");
+  assert.equal(result.confidence, 0.25);
+  assert.equal(result.status, "ambiguous");
 });
 
 test("does not borrow observations outside the segment", () => {
@@ -33,4 +41,17 @@ test("leaves words unknown when speaker evidence is stale", () => {
   const turns = buildSpeakerTurns([{ fromMs: 5000, toMs: 5400, text: "Unknown" }], [sample(100, "a", "Alice")]);
   assert.equal(turns[0].speaker, null);
   assert.equal(turns[0].status, "unknown");
+});
+
+test("offsets relative Whisper words into recorder time", () => {
+  const turns = buildSpeakerTurns([{ fromMs: 100, toMs: 400, text: "Hello" }], [sample(1200, "a", "Alice")], 900, 1000);
+  assert.equal(turns[0].speaker, "Alice");
+  assert.equal(turns[0].confidence, 0.944);
+});
+
+test("flags competing dominant-speaker samples near a word", () => {
+  const turns = buildSpeakerTurns([{ fromMs: 400, toMs: 600, text: "Hello" }], [sample(450, "a", "Alice"), sample(550, "b", "Bob")]);
+  assert.equal(turns[0].speaker, "Alice");
+  assert.equal(turns[0].status, "ambiguous");
+  assert.equal(turns[0].confidence, 0.472);
 });
