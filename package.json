@@ -1,5 +1,5 @@
 {
-  "name": "jitsi-transcriber",
+  "name": "jitscribe",
   "version": "0.1.0-alpha.0",
   "description": "A local-first Jitsi meeting bot with offline Whisper transcription",
   "license": "Apache-2.0",
@@ -18,7 +18,7 @@
     "NOTICE"
   ],
   "type": "module",
-  "bin": { "jitsi-transcriber": "dist/cli.js" },
+  "bin": { "jitscribe": "dist/cli.js" },
   "scripts": {
     "build": "tsc",
     "prepack": "npm run build",

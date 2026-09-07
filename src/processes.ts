@@ -39,7 +39,7 @@ export interface PulseSink { sink: string; monitor: string; close(): void; }
 
 export function createPulseSink(name: string): PulseSink {
   const pactl = findExecutable(undefined, ["pactl"]);
-  const result = spawnSync(pactl, ["load-module", "module-null-sink", `sink_name=${name}`, "sink_properties=device.description=JitsiTranscriber"], { encoding: "utf8" });
+  const result = spawnSync(pactl, ["load-module", "module-null-sink", `sink_name=${name}`, "sink_properties=device.description=Jitscribe"], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`cannot create PulseAudio sink: ${(result.stderr || result.stdout).trim()}`);
   const moduleId = result.stdout.trim();
   return {

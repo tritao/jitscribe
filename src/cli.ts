@@ -7,7 +7,7 @@ import { join, isJoined } from "./jitsi.js";
 import { appendSegment, transcribeChunk } from "./transcript.js";
 import { checkedSpawn, createPulseSink, findExecutable, waitForStableFiles } from "./processes.js";
 
-const HELP = `Usage: jitsi-transcriber join <room-or-url> [options]
+const HELP = `Usage: jitscribe join <room-or-url> [options]
 
   --host URL                 Host for a bare room id (default: https://meet.jit.si)
   --name NAME                Visible participant name
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
   const chunkDir = `${dirname(opts.audio)}/.${basename(opts.audio)}.chunks-${process.pid}`;
   await mkdir(chunkDir, { recursive: true });
 
-  const ownedPulse = process.env.JITSI_PULSE_SINK ? undefined : createPulseSink(`jitsi_transcriber_${process.pid}`);
+  const ownedPulse = process.env.JITSI_PULSE_SINK ? undefined : createPulseSink(`jitscribe_${process.pid}`);
   const pulseSource = process.env.JITSI_PULSE_SINK ?? ownedPulse!.monitor;
   const pattern = `${chunkDir}/chunk-%06d.wav`;
   const recorder = checkedSpawn(ffmpeg, ["-nostdin", "-f", "pulse", "-i", pulseSource, "-ac", "1", "-ar", "16000", "-f", "segment", "-segment_time", String(opts.chunkSeconds), "-reset_timestamps", "1", pattern]);
@@ -93,4 +93,4 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch(error => { console.error(`jitsi-transcriber: ${error.message}`); process.exitCode = 1; });
+main().catch(error => { console.error(`jitscribe: ${error.message}`); process.exitCode = 1; });
