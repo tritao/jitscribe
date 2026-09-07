@@ -54,8 +54,11 @@ impl WhisperTranscriber {
                 .segments
                 .into_iter()
                 .map(|segment| Segment {
-                    start_ms: segment.start_ms,
-                    end_ms: segment.end_ms,
+                    // whisper.cpp timestamps are in 10 ms ticks. The
+                    // upstream crate names these fields `*_ms` but returns
+                    // the raw tick values.
+                    start_ms: whisper_timestamp_to_ms(segment.start_ms),
+                    end_ms: whisper_timestamp_to_ms(segment.end_ms),
                     text: segment.text,
                 })
                 .collect(),
@@ -71,9 +74,13 @@ pub fn pcm_i16_to_f32(samples: &[i16]) -> Vec<f32> {
         .collect()
 }
 
+fn whisper_timestamp_to_ms(ticks: i64) -> i64 {
+    ticks * 10
+}
+
 #[cfg(test)]
 mod tests {
-    use super::pcm_i16_to_f32;
+    use super::{pcm_i16_to_f32, whisper_timestamp_to_ms};
 
     #[test]
     fn converts_pcm_without_clipping() {
@@ -81,5 +88,10 @@ mod tests {
         assert_eq!(converted[0], -1.0);
         assert_eq!(converted[2], 0.0);
         assert!((converted[4] - 0.9999695).abs() < 0.000001);
+    }
+
+    #[test]
+    fn converts_whisper_ten_millisecond_ticks() {
+        assert_eq!(whisper_timestamp_to_ms(110), 1_100);
     }
 }
