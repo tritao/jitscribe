@@ -21,6 +21,7 @@ self-hosted Jitsi deployments.
 - Transcribes locally with the multilingual Whisper `small` model
 - Appends completed segments to a crash-resistant JSONL file
 - Adds best-effort speaker names from Jitsi's dominant-speaker state
+- Uses Whisper word timestamps to split a transcript when speakers change
 - Runs with headless Chromium by default
 
 ## Requirements
@@ -125,7 +126,7 @@ By default, a room called `YourRoom` produces `YourRoom.jsonl`. Each line is an
 independently durable JSON object:
 
 ```json
-{"timestamp":"2026-09-02T11:39:36.105Z","start":"2026-09-02T11:39:34.105Z","end":"2026-09-02T11:39:36.000Z","speaker":"Alice","speakerId":"participant-id","speakerConfidence":0.8,"text":"Hello. How are you?","chunk":0}
+{"timestamp":"2026-09-02T11:39:36.105Z","start":"2026-09-02T11:39:34.105Z","end":"2026-09-02T11:39:36.000Z","speaker":"Alice","speakerId":"participant-id","speakerConfidence":0.8,"speakerStatus":"attributed","text":"Hello. How are you?","chunk":0}
 ```
 
 Temporary WAV chunks are deleted after a clean shutdown. Add `--keep-audio` when
@@ -172,8 +173,8 @@ command line.
 
 - Linux only
 - One meeting per process
-- Speaker attribution is best-effort: it aligns mixed-audio Whisper segments with
-  Jitsi's dominant-speaker signal and can be ambiguous during overlap or rapid turns
+- Speaker attribution is best-effort: it aligns Whisper words with Jitsi's
+  dominant-speaker signal and can be ambiguous during overlap or rapid turns
 - Headless mode is implemented but has not completed a live validation run
 - The persistent Whisper worker handles one audio chunk at a time, so output arrives
   after each configured chunk interval rather than word-by-word

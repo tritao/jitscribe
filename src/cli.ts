@@ -6,7 +6,7 @@ import { parseArgs } from "./options.js";
 import { join, isJoined } from "./jitsi.js";
 import { appendSegment, shouldEmitSegment, WhisperWorker } from "./transcript.js";
 import { checkedSpawn, createPulseSink, findExecutable, waitForStableFiles, buildOverlapWindow, stopProcess } from "./processes.js";
-import { attributeSpeaker, SpeakerTracker } from "./speakers.js";
+import { attributeSpeaker, buildSpeakerTurns, SpeakerTracker } from "./speakers.js";
 import { Logger } from "./logging.js";
 
 const HELP = `Usage: jitscribe join <room-or-url> [options]
@@ -84,19 +84,27 @@ async function main(): Promise<void> {
         const whisperSegments = await worker!.transcribe(input, opts.language);
         if (input === windowPath && !opts.keepAudio) await rm(windowPath, { force: true });
         for (const item of whisperSegments) {
-          const startMs = windowStart + item.fromMs;
-          const endMs = windowStart + item.toMs;
+          const turns = item.words.length ? buildSpeakerTurns(item.words, speakers!.observations) : [{
+            fromMs: item.fromMs, toMs: item.toMs, text: item.text,
+            ...attributeSpeaker(speakers!.observations, windowStart + item.fromMs, windowStart + item.toMs),
+            status: "unknown" as const,
+          }];
+          for (const turn of turns) if (turn.speaker) turn.status = "attributed";
+          for (const turn of turns) {
+          const startMs = windowStart + turn.fromMs;
+          const endMs = windowStart + turn.toMs;
           if (!shouldEmitSegment(endMs, emittedThroughMs, watermark)) continue;
-          const attribution = attributeSpeaker(speakers!.observations, startMs, endMs);
           const segment = {
             timestamp: new Date().toISOString(), start: new Date(startMs).toISOString(),
-            end: new Date(endMs).toISOString(), text: item.text, chunk: chunkNumber,
-            speaker: attribution.speaker, speakerId: attribution.speakerId,
-            speakerConfidence: attribution.confidence,
+            end: new Date(endMs).toISOString(), text: turn.text, chunk: chunkNumber,
+            speaker: turn.speaker, speakerId: turn.speakerId,
+            speakerConfidence: turn.confidence,
+            speakerStatus: turn.status,
           };
           await appendSegment(opts.output, segment);
           console.log(`[${segment.start}] ${segment.speaker ?? "Unknown"}: ${segment.text}`);
           emittedThroughMs = Math.max(emittedThroughMs, endMs);
+          }
         }
       }
     };

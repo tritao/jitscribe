@@ -2,8 +2,9 @@ import { appendFile, readFile } from "node:fs/promises";
 import { basename } from "node:path";
 import { createServer } from "node:net";
 import { spawn, type ChildProcess } from "node:child_process";
+import type { TimedWord } from "./speakers.js";
 
-export interface WhisperSegment { fromMs: number; toMs: number; text: string; }
+export interface WhisperSegment { fromMs: number; toMs: number; text: string; words: TimedWord[]; }
 export interface Segment {
   timestamp: string;
   start: string;
@@ -13,6 +14,7 @@ export interface Segment {
   speaker: string | null;
   speakerId: string | null;
   speakerConfidence: number;
+  speakerStatus?: "attributed" | "unknown" | "ambiguous";
 }
 
 export function isMeaningfulTranscript(text: string): boolean {
@@ -22,14 +24,15 @@ export function isMeaningfulTranscript(text: string): boolean {
 }
 
 interface WhisperServerResponse {
-  segments?: Array<{ start?: number; end?: number; text?: string }>;
+  segments?: Array<{ start?: number; end?: number; text?: string; words?: Array<{ start?: number; end?: number; word?: string; probability?: number }> }>;
 }
 
 export function parseWhisperResponse(document: WhisperServerResponse): WhisperSegment[] {
   return (document.segments ?? []).flatMap(segment => {
     const text = String(segment.text ?? "").trim();
     if (!isMeaningfulTranscript(text)) return [];
-    return [{ fromMs: Math.round((segment.start ?? 0) * 1000), toMs: Math.round((segment.end ?? 0) * 1000), text }];
+    const words = (segment.words ?? []).map(word => ({ fromMs: Math.round((word.start ?? segment.start ?? 0) * 1000), toMs: Math.round((word.end ?? segment.end ?? 0) * 1000), text: String(word.word ?? "").trim(), probability: word.probability })).filter(word => word.text);
+    return [{ fromMs: Math.round((segment.start ?? 0) * 1000), toMs: Math.round((segment.end ?? 0) * 1000), text, words }];
   });
 }
 

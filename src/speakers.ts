@@ -15,6 +15,17 @@ export interface SpeakerAttribution {
   samples: number;
 }
 
+export interface TimedWord { fromMs: number; toMs: number; text: string; probability?: number; }
+export interface SpeakerTurn {
+  fromMs: number;
+  toMs: number;
+  text: string;
+  speaker: string | null;
+  speakerId: string | null;
+  confidence: number;
+  status: "attributed" | "unknown" | "ambiguous";
+}
+
 export async function readDominantSpeaker(page: Page, selfName: string): Promise<Omit<SpeakerObservation, "atMs"> | null> {
   const dominant = await page.evaluate(() => {
     try {
@@ -60,6 +71,40 @@ export function attributeSpeaker(observations: SpeakerObservation[], fromMs: num
     confidence: Number((winner.count / relevant.length).toFixed(3)),
     samples: relevant.length,
   };
+}
+
+function speakerAt(observations: SpeakerObservation[], atMs: number): SpeakerObservation | null {
+  let best: SpeakerObservation | null = null;
+  let distance = Number.POSITIVE_INFINITY;
+  for (const sample of observations) {
+    const currentDistance = Math.abs(sample.atMs - atMs);
+    if (currentDistance < distance) { best = sample; distance = currentDistance; }
+  }
+  return best && distance <= 900 ? best : null;
+}
+
+/** Match Whisper words to the nearest fresh Jitsi dominant-speaker observation and group turns. */
+export function buildSpeakerTurns(words: TimedWord[], observations: SpeakerObservation[], gapMs = 900): SpeakerTurn[] {
+  const attributed = words.map(word => {
+    const sample = speakerAt(observations, (word.fromMs + word.toMs) / 2);
+    return { word, sample };
+  });
+  const turns: SpeakerTurn[] = [];
+  for (const { word, sample } of attributed) {
+    const speaker = sample?.name || null;
+    const id = sample?.id || null;
+    const previous = turns.at(-1);
+    const canJoin = previous && previous.speaker === speaker && previous.speakerId === id && word.fromMs - previous.toMs <= gapMs;
+    if (canJoin) {
+      previous.toMs = word.toMs;
+      previous.text = `${previous.text} ${word.text}`.trim();
+      previous.confidence = Number(((previous.confidence + (sample ? 1 : 0)) / 2).toFixed(3));
+    } else {
+      turns.push({ fromMs: word.fromMs, toMs: word.toMs, text: word.text.trim(), speaker, speakerId: id,
+        confidence: sample ? 1 : 0, status: speaker ? "attributed" : "unknown" });
+    }
+  }
+  return turns;
 }
 
 export class SpeakerTracker {
