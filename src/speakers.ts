@@ -1,5 +1,6 @@
 /* Adapted from Vexa's Apache-2.0 Jitsi dominant-speaker capture. See NOTICE. */
 import type { Page } from "playwright-core";
+import { SpeakerBinder } from "./binder.js";
 
 export interface SpeakerObservation {
   atMs: number;
@@ -103,29 +104,16 @@ export async function readDominantSpeaker(page: Page, selfName: string): Promise
   return dominant;
 }
 
-function activeSpeakerAt(events: readonly SpeakerSignal[], atMs: number): SpeakerSignal | null {
-  let active: SpeakerSignal | null = null;
-  for (const event of events) {
-    if (event.atMs > atMs) break;
-    if (event.phase === "end") {
-      if (active?.id === event.id) active = null;
-    } else {
-      active = event;
-    }
-  }
-  return active;
-}
-
 export function attributeSpeaker(
   observations: readonly SpeakerObservation[],
   fromMs: number,
   toMs: number,
   events: readonly SpeakerSignal[] = [],
 ): SpeakerAttribution {
+  if (events.length) return new SpeakerBinder(events).resolve(fromMs, toMs);
   const relevant = observations.filter(sample => {
     if (sample.atMs < fromMs || sample.atMs > toMs) return false;
-    if (!events.length) return true;
-    return activeSpeakerAt(events, sample.atMs)?.id === sample.id;
+    return true;
   });
   if (!relevant.length) return { speaker: null, speakerId: null, confidence: 0, samples: 0, status: "unknown" };
   const counts = new Map<string, { name: string; id: string; count: number }>();
@@ -161,18 +149,13 @@ function speakerAt(
   observations: readonly SpeakerObservation[],
   atMs: number,
   maxAgeMs: number,
-  events: readonly SpeakerSignal[] = [],
 ): SpeakerMatch | null {
-  const active = events.length ? activeSpeakerAt(events, atMs) : undefined;
-  if (events.length && !active) return null;
-  const candidates = active ? observations.filter(sample => sample.id === active.id) : observations;
   const ranked = observations
-    .filter(sample => candidates.includes(sample))
     .map(sample => ({ sample, distance: Math.abs(sample.atMs - atMs) }))
     .sort((a, b) => a.distance - b.distance);
   const best = ranked[0];
   if (!best || best.distance > maxAgeMs) return null;
-  const competitor = active ? undefined : ranked.find(candidate => candidate.sample.id !== best.sample.id);
+  const competitor = ranked.find(candidate => candidate.sample.id !== best.sample.id);
   const ambiguityWindow = Math.min(150, maxAgeMs * 0.25);
   const ambiguous = Boolean(competitor && competitor.distance - best.distance <= ambiguityWindow);
   return {
@@ -190,17 +173,21 @@ export function buildSpeakerTurns(
   timeOffsetMs = 0,
   events: readonly SpeakerSignal[] = [],
 ): SpeakerTurn[] {
+  const binder = events.length ? new SpeakerBinder(events) : undefined;
   const attributed = words.map(word => {
-    const match = speakerAt(observations, timeOffsetMs + (word.fromMs + word.toMs) / 2, gapMs, events);
-    return { word, match };
+    const fromMs = timeOffsetMs + word.fromMs;
+    const toMs = timeOffsetMs + word.toMs;
+    if (binder) {
+      const binding = binder.resolve(fromMs, toMs);
+      return { word, speaker: binding.speaker, id: binding.speakerId, confidence: binding.confidence, status: binding.status };
+    }
+    const match = speakerAt(observations, timeOffsetMs + (word.fromMs + word.toMs) / 2, gapMs);
+    return { word, speaker: match?.sample.name || null, id: match?.sample.id || null,
+      confidence: match?.confidence ?? 0, status: !match ? "unknown" as const : match.ambiguous ? "ambiguous" as const : "attributed" as const };
   });
   const turns: SpeakerTurn[] = [];
   const wordCounts: number[] = [];
-  for (const { word, match } of attributed) {
-    const speaker = match?.sample.name || null;
-    const id = match?.sample.id || null;
-    const confidence = match?.confidence ?? 0;
-    const status = !speaker ? "unknown" : match?.ambiguous ? "ambiguous" : "attributed";
+  for (const { word, speaker, id, confidence, status } of attributed) {
     const previous = turns.at(-1);
     const canJoin = previous && previous.speaker === speaker && previous.speakerId === id && word.fromMs - previous.toMs <= gapMs;
     if (canJoin) {

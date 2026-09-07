@@ -8,6 +8,7 @@
   "engines": { "node": ">=22" },
   "files": [
     "dist/cli.js",
+    "dist/binder.js",
     "dist/jitsi.js",
     "dist/logging.js",
     "dist/options.js",

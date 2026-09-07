@@ -22,6 +22,7 @@ self-hosted Jitsi deployments.
 - Appends completed segments to a crash-resistant JSONL file
 - Adds best-effort speaker names from Jitsi's dominant-speaker state
 - Uses Whisper word timestamps to split a transcript when speakers change
+- Resolves speaker hints through a lag-corrected, overlap-based local binder
 - Reports attribution confidence and marks competing speaker evidence as `ambiguous`
 - Runs with headless Chromium by default
 
@@ -158,6 +159,8 @@ Overlapping windows + Silero VAD
     ↓
 Persistent local whisper.cpp worker
     ↓
+Speaker hint binder + word-level attribution
+    ↓
 JSONL transcript
 ```
 
@@ -182,7 +185,10 @@ command line.
 - Linux only
 - One meeting per process
 - Speaker attribution is best-effort: it aligns Whisper words with Jitsi's
-  dominant-speaker signal and can be ambiguous during overlap or rapid turns
+  dominant-speaker signal through a lag-corrected overlap binder and can be
+  ambiguous during overlap or rapid turns
+- Unlike Vexa's multi-service pipeline, Jitscribe does not have diarizer cluster
+  IDs or mutable late-repaint updates; unresolved turns remain `unknown`
 - Headless mode is implemented but has not completed a live validation run
 - The persistent Whisper worker handles one audio chunk at a time, so output arrives
   after each configured chunk interval rather than word-by-word
