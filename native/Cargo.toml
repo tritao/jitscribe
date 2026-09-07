@@ -3,4 +3,5 @@ resolver = "2"
 members = [
   "jitscribe-audio-core",
   "jitscribe-audio-napi",
+  "jitscribe-whisper-core",
 ]

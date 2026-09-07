@@ -269,6 +269,16 @@ does not yet provide platform-specific application isolation or ship prebuilt
 artifacts for every operating system. Those are the next steps before enabling
 `--audio-backend native`.
 
+### Experimental in-process Whisper backend
+
+`native/jitscribe-whisper-core` is a separate Rust crate that uses
+[`whisper-cpp-plus`](https://github.com/operator-kit/whisper-cpp-plus-rs) to
+consume the same normalized PCM and return timestamped segments. It builds as
+part of `npm run test:native`, but is not wired into the CLI yet. This lets us
+benchmark it against the current persistent `whisper-server` worker without
+changing the production path. The crate currently expects a GGML model and
+does not load or download models itself.
+
 ## License and attribution
 
 Jitscribe is licensed under the Apache License 2.0. See [LICENSE](LICENSE) and

@@ -1,0 +1,9 @@
+[package]
+name = "jitscribe-whisper-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "Experimental in-process Whisper inference for Jitscribe"
+
+[dependencies]
+whisper-cpp-plus = "0.1.5"
