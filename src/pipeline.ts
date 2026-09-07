@@ -10,6 +10,7 @@ export interface WhisperTranscriber {
 export interface TranscriptPipelineOptions {
   chunkDir: string;
   output: string;
+  sessionId: string;
   captureStartedAtMs: number;
   chunkSeconds: number;
   overlapSeconds: number;
@@ -54,7 +55,8 @@ export class TranscriptPipeline {
       const whisperSegments = await options.worker.transcribe(input, options.language);
       if (input === windowPath && !options.keepAudio) await rm(windowPath, { force: true });
 
-      for (const item of whisperSegments) {
+      for (let itemIndex = 0; itemIndex < whisperSegments.length; itemIndex++) {
+        const item = whisperSegments[itemIndex];
         const speakerEvents = options.getSpeakerEvents?.() ?? [];
         const turns: SpeakerTurn[] = item.words.length
           ? buildSpeakerTurns(item.words, options.getSpeakerObservations(), 900, windowStart, speakerEvents)
@@ -64,11 +66,15 @@ export class TranscriptPipeline {
             text: item.text,
             ...attributeSpeaker(options.getSpeakerObservations(), windowStart + item.fromMs, windowStart + item.toMs, speakerEvents),
           }];
-        for (const turn of turns) {
+        for (let turnIndex = 0; turnIndex < turns.length; turnIndex++) {
+          const turn = turns[turnIndex];
           const startMs = windowStart + turn.fromMs;
           const endMs = windowStart + turn.toMs;
           if (!shouldEmitSegment(endMs, this.emittedThroughMs, watermark)) continue;
           const segment: Segment = {
+            sessionId: options.sessionId,
+            segmentId: buildSegmentId(options.sessionId, chunkNumber, itemIndex, turnIndex),
+            revision: 0,
             timestamp: new Date().toISOString(),
             start: new Date(startMs).toISOString(),
             end: new Date(endMs).toISOString(),
@@ -88,4 +94,9 @@ export class TranscriptPipeline {
     }
     return emitted;
   }
+}
+
+/** Stable within a capture session, including the audio chunk and turn position. */
+export function buildSegmentId(sessionId: string, chunkNumber: number, itemIndex: number, turnIndex: number): string {
+  return `${sessionId}:chunk-${String(chunkNumber).padStart(6, "0")}:turn-${String(itemIndex).padStart(4, "0")}-${String(turnIndex).padStart(4, "0")}`;
 }

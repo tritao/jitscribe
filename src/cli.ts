@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { randomUUID } from "node:crypto";
 import { mkdir, rm, stat } from "node:fs/promises";
 import { dirname, basename } from "node:path";
 import { chromium } from "playwright-core";
@@ -74,6 +75,7 @@ async function main(): Promise<void> {
     const pipeline = new TranscriptPipeline({
       chunkDir,
       output: opts.output,
+      sessionId: randomUUID(),
       captureStartedAtMs: captureStartedAt,
       chunkSeconds: opts.chunkSeconds,
       overlapSeconds: opts.overlapSeconds,

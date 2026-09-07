@@ -53,9 +53,10 @@ test("mocked headless join flows from captured chunk to attributed JSONL", async
         }] });
       },
     };
-    const segments = await new TranscriptPipeline({
+    const pipeline = new TranscriptPipeline({
       chunkDir,
       output,
+      sessionId: "integration-session",
       captureStartedAtMs: 1_000,
       chunkSeconds: 15,
       overlapSeconds: 0,
@@ -70,7 +71,9 @@ test("mocked headless join flows from captured chunk to attributed JSONL", async
       getSpeakerEvents: () => [
         { atMs: 1_000, id: "alice-id", name: "Alice", source: "redux", phase: "start" },
       ],
-    }).process(true);
+    });
+    const segments = await pipeline.process(true);
+    assert.equal((await pipeline.process(true)).length, 0);
 
     assert.match(transcribedPath, /chunk-000000\.wav$/);
     assert.equal(segments.length, 1);
@@ -78,9 +81,13 @@ test("mocked headless join flows from captured chunk to attributed JSONL", async
     assert.equal(segments[0].speaker, "Alice");
     assert.equal(segments[0].speakerStatus, "attributed");
     assert.equal(segments[0].speakerConfidence, 1);
+    assert.equal(segments[0].sessionId, "integration-session");
+    assert.equal(segments[0].segmentId, "integration-session:chunk-000000:turn-0000-0000");
+    assert.equal(segments[0].revision, 0);
     const records = (await readFile(output, "utf8")).trim().split("\n").map(line => JSON.parse(line));
     assert.equal(records.length, 1);
     assert.equal(records[0].speakerId, "alice-id");
+    assert.equal(records[0].segmentId, segments[0].segmentId);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

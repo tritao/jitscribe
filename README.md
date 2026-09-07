@@ -128,8 +128,13 @@ By default, a room called `YourRoom` produces `YourRoom.jsonl`. Each line is an
 independently durable JSON object:
 
 ```json
-{"timestamp":"2026-09-02T11:39:36.105Z","start":"2026-09-02T11:39:34.105Z","end":"2026-09-02T11:39:36.000Z","speaker":"Alice","speakerId":"participant-id","speakerConfidence":0.8,"speakerStatus":"attributed","text":"Hello. How are you?","chunk":0}
+{"sessionId":"6c9e7a9f-8f3d-4c0c-a3a4-8e5c9e98fabc","segmentId":"6c9e7a9f-8f3d-4c0c-a3a4-8e5c9e98fabc:chunk-000000:turn-0000-0000","revision":0,"timestamp":"2026-09-02T11:39:36.105Z","start":"2026-09-02T11:39:34.105Z","end":"2026-09-02T11:39:36.000Z","speaker":"Alice","speakerId":"participant-id","speakerConfidence":0.8,"speakerStatus":"attributed","text":"Hello. How are you?","chunk":0}
 ```
+
+`sessionId` identifies one process run. `segmentId` is stable within that session
+and encodes the source chunk, Whisper item, and turn position. `revision` starts at
+zero; the current CLI emits immutable revision-zero records and reserves the field
+for future correction/upsert records.
 
 Temporary WAV chunks are deleted after a clean shutdown. Add `--keep-audio` when
 debugging capture or transcription.
@@ -188,7 +193,8 @@ command line.
   dominant-speaker signal through a lag-corrected overlap binder and can be
   ambiguous during overlap or rapid turns
 - Unlike Vexa's multi-service pipeline, Jitscribe does not have diarizer cluster
-  IDs or mutable late-repaint updates; unresolved turns remain `unknown`
+  IDs or mutable late-repaint updates; IDs are session-scoped and unresolved turns
+  remain `unknown`
 - Headless mode is implemented but has not completed a live validation run
 - The persistent Whisper worker handles one audio chunk at a time, so output arrives
   after each configured chunk interval rather than word-by-word

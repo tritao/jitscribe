@@ -6,6 +6,9 @@ import type { TimedWord } from "./speakers.js";
 
 export interface WhisperSegment { fromMs: number; toMs: number; text: string; words: TimedWord[]; }
 export interface Segment {
+  sessionId: string;
+  segmentId: string;
+  revision: number;
   timestamp: string;
   start: string;
   end: string;
