@@ -68,7 +68,16 @@ async function main(): Promise<void> {
     recorder = checkedSpawn(ffmpeg, ["-nostdin", "-loglevel", opts.verbose ? "info" : "error", "-f", "pulse", "-i", pulseSource, "-ac", "1", "-ar", "16000", "-f", "segment", "-segment_time", String(opts.chunkSeconds), "-reset_timestamps", "1", pattern], process.env,
       text => log.verbose("ffmpeg", text.trim()));
     const captureStartedAt = Date.now();
-    browser = await chromium.launch({ executablePath: browserPath, headless: !opts.headed, env: { ...process.env, PULSE_SINK: ownedPulse?.sink ?? process.env.PULSE_SINK ?? "" }, args: ["--autoplay-policy=no-user-gesture-required", "--disable-dev-shm-usage"] });
+    browser = await chromium.launch({
+      executablePath: browserPath,
+      headless: !opts.headed,
+      // Playwright adds --mute-audio in headless mode, which produces a valid
+      // but silent PulseAudio monitor stream. The bot must render remote audio
+      // into its dedicated sink for FFmpeg to capture it.
+      ignoreDefaultArgs: ["--mute-audio"],
+      env: { ...process.env, PULSE_SINK: ownedPulse?.sink ?? process.env.PULSE_SINK ?? "" },
+      args: ["--autoplay-policy=no-user-gesture-required", "--disable-dev-shm-usage"],
+    });
     const context = await browser.newContext({ permissions: ["microphone", "camera"] });
     const page = await context.newPage();
     speakers = new SpeakerTracker(page, opts.name);
